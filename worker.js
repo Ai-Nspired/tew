@@ -1,6 +1,197 @@
 // src/worker.mjs
 import { DurableObject } from "cloudflare:workers";
 
+// src/nsm.mjs - Neuro Symbolic Model Layer
+var NSM_CLASS = class {
+  constructor(kv) {
+    this.kv = kv;
+  }
+  async getDomainIndex() {
+    if (!this.kv) return { domains: [] };
+    return await this.kv.get("DOMAIN:index", { type: "json" }) || { domains: [] };
+  }
+  async putDomainIndex(idx) {
+    if (this.kv) await this.kv.put("DOMAIN:index", JSON.stringify(idx));
+  }
+  async getDomainPatterns(domain) {
+    if (!this.kv) return [];
+    return await this.kv.get(`DOMAIN:${domain}:patterns`, { type: "json" }) || [];
+  }
+  async putDomainPatterns(domain, patterns) {
+    if (this.kv) await this.kv.put(`DOMAIN:${domain}:patterns`, JSON.stringify(patterns));
+  }
+  async getDomainPrinciples(domain) {
+    if (!this.kv) return [];
+    return await this.kv.get(`DOMAIN:${domain}:principles`, { type: "json" }) || [];
+  }
+  async putDomainPrinciples(domain, principles) {
+    if (this.kv) await this.kv.put(`DOMAIN:${domain}:principles`, JSON.stringify(principles));
+  }
+  async getDomainConfidence(domain) {
+    if (!this.kv) return 0;
+    const rec = await this.kv.get(`DOMAIN:${domain}:confidence`, { type: "json" });
+    return rec ? rec.score : 0;
+  }
+  async putDomainConfidence(domain, score) {
+    if (this.kv) await this.kv.put(`DOMAIN:${domain}:confidence`, JSON.stringify({ score, ts: Date.now() }));
+  }
+  async getRecallLog(domain) {
+    if (!this.kv) return [];
+    return await this.kv.get(`DOMAIN:${domain}:recall`, { type: "json" }) || [];
+  }
+  async appendRecallLog(domain, entry) {
+    if (!this.kv) return;
+    const log = await this.getRecallLog(domain);
+    log.push({ ...entry, ts: Date.now() });
+    if (log.length > 200) log.splice(0, log.length - 200);
+    await this.kv.put(`DOMAIN:${domain}:recall`, JSON.stringify(log));
+  }
+  extractPatterns(text) {
+    if (!text) return [];
+    const lower = text.toLowerCase();
+    const words = lower.replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(w => w.length > 3);
+    const freq = {};
+    for (const w of words) freq[w] = (freq[w] || 0) + 1;
+    const terms = Object.entries(freq).filter(([, c]) => c >= 2).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([value, frequency]) => ({ type: "term", value, frequency }));
+    const bigrams = [];
+    for (let i = 0; i < words.length - 1; i++) {
+      const bg = words[i] + " " + words[i + 1];
+      freq[bg] = (freq[bg] || 0) + 1;
+    }
+    for (const [bg, c] of Object.entries(freq)) {
+      if (bg.includes(" ") && c >= 2) bigrams.push({ type: "bigram", value: bg, frequency: c });
+    }
+    bigrams.sort((a, b) => b.frequency - a.frequency);
+    return [...terms, ...bigrams.slice(0, 15)];
+  }
+  async checkCache(patterns) {
+    const idx = await this.getDomainIndex();
+    const hits = [];
+    const allCachedPatterns = [];
+    for (const domain of idx.domains) {
+      const dp = await this.getDomainPatterns(domain);
+      allCachedPatterns.push(...dp.map(p => ({ ...p, domain })));
+    }
+    for (const pat of patterns) {
+      const match = allCachedPatterns.find(cp => cp.value === pat.value);
+      if (match) hits.push({ pattern: pat, domain: match.domain });
+    }
+    return { hits, domains: idx.domains, allCachedPatterns };
+  }
+  buildConsensus(patterns, cacheHits) {
+    if (patterns.length === 0) return { score: 0, domainVotes: {} };
+    const domainVotes = {};
+    for (const hit of cacheHits) {
+      domainVotes[hit.domain] = (domainVotes[hit.domain] || 0) + 1;
+    }
+    const matchRatio = cacheHits.length / patterns.length;
+    let topDomain = null;
+    let topVotes = 0;
+    for (const [d, v] of Object.entries(domainVotes)) {
+      if (v > topVotes) { topDomain = d; topVotes = v; }
+    }
+    const score = topDomain ? (topVotes / patterns.length) * (topVotes >= 3 ? 1 : 0.5) : matchRatio;
+    return { score, topDomain, domainVotes };
+  }
+  async acquireDomain(domainName, principles) {
+    const idx = await this.getDomainIndex();
+    if (!idx.domains.includes(domainName)) {
+      idx.domains.push(domainName);
+      await this.putDomainIndex(idx);
+    }
+    if (principles && principles.length > 0) {
+      const existing = await this.getDomainPrinciples(domainName);
+      const merged = [...existing];
+      for (const p of principles) {
+        const txt = typeof p === "string" ? p : p.text || "";
+        if (txt && !merged.some(e => (typeof e === "string" ? e : e.text) === txt)) {
+          merged.push(p);
+        }
+      }
+      await this.putDomainPrinciples(domainName, merged);
+    }
+  }
+  async enrichMessages(messages, domain, principles) {
+    if (!domain || !principles || principles.length === 0) return { messages, domainApplied: false };
+    const principleList = principles.map(p => typeof p === "string" ? p : p.text || "").filter(Boolean).join("; ");
+    const enriched = messages.map(m => ({ ...m }));
+    const sysIdx = enriched.findIndex(m => m.role === "system");
+    if (sysIdx >= 0) {
+      enriched[sysIdx] = {
+        ...enriched[sysIdx],
+        content: enriched[sysIdx].content + "\n\n[NSM Domain: " + domain + " | Principles: " + principleList + "]"
+      };
+    } else {
+      enriched.unshift({ role: "system", content: "[NSM Domain: " + domain + " | Principles: " + principleList + "]" });
+    }
+    return { messages: enriched, domainApplied: true };
+  }
+  async wrap(messages, task, context = {}) {
+    const text = messages.map(m => m.content || "").join(" ");
+    const patterns = this.extractPatterns(text);
+    const cache = await this.checkCache(patterns);
+    const consensus = this.buildConsensus(patterns, cache.hits);
+    let domain = context.domain || consensus.topDomain || "general";
+    let principles = await this.getDomainPrinciples(domain);
+    let domainCreated = false;
+    if (consensus.score >= 0.3 && domain !== "general" && principles.length === 0) {
+      await this.acquireDomain(domain, []);
+      domainCreated = true;
+    }
+    const prevConf = await this.getDomainConfidence(domain);
+    const newConf = Math.min(1, prevConf + (consensus.score * 0.1));
+    await this.putDomainConfidence(domain, newConf);
+    const { messages: enriched, domainApplied } = await this.enrichMessages(messages, domain, principles);
+    const needsExpert = newConf < 0.2 && patterns.length > 5;
+    await this.appendRecallLog(domain, {
+      task,
+      patternCount: patterns.length,
+      cacheHitCount: cache.hits.length,
+      consensusScore: consensus.score,
+      domainApplied,
+      needsExpert
+    });
+    return {
+      messages: enriched,
+      metadata: {
+        domain,
+        domainApplied,
+        domainCreated,
+        confidence: newConf,
+        consensusScore: consensus.score,
+        patternCount: patterns.length,
+        cacheHitCount: cache.hits.length,
+        principleCount: principles.length,
+        needsExpert,
+        topPatterns: patterns.slice(0, 8)
+      }
+    };
+  }
+  async postProcess(responseText, domain, task) {
+    if (!responseText || domain === "general") return;
+    const newPatterns = this.extractPatterns(responseText);
+    if (newPatterns.length === 0) return;
+    const existing = await this.getDomainPatterns(domain);
+    const merged = [...existing];
+    for (const p of newPatterns) {
+      if (!merged.some(e => e.value === p.value)) merged.push(p);
+    }
+    if (merged.length > 300) merged.splice(0, merged.length - 300);
+    await this.putDomainPatterns(domain, merged);
+  }
+  async listDomains() {
+    const idx = await this.getDomainIndex();
+    const domains = [];
+    for (const d of idx.domains) {
+      const principles = await this.getDomainPrinciples(d);
+      const patterns = await this.getDomainPatterns(d);
+      const conf = await this.getDomainConfidence(d);
+      domains.push({ name: d, principleCount: principles.length, patternCount: patterns.length, confidence: conf, principles, patterns: patterns.slice(0, 20) });
+    }
+    return domains;
+  }
+};
+
 // src/llm-router.mjs
 var CF_AI_MODEL = "@cf/meta/llama-3.1-8b-instruct-fast";
 var OPENROUTER_MODEL = "@preset/truth";
@@ -17,10 +208,11 @@ var TASK_BACKEND = {
   generate: "openrouter"
 };
 var LLMRouter = class {
-  constructor(cfAI, openrouterKey, openrouterBaseUrl = "https://openrouter.ai/api/v1") {
+  constructor(cfAI, openrouterKey, openrouterBaseUrl = "https://openrouter.ai/api/v1", nsm = null) {
     this.cfAI = cfAI;
     this.openrouterKey = openrouterKey;
     this.openrouterBaseUrl = openrouterBaseUrl;
+    this.nsm = nsm;
   }
   async callCfAI(messages, options = {}) {
     const response = await this.cfAI.run(CF_AI_MODEL, {
@@ -49,25 +241,37 @@ var LLMRouter = class {
     return data?.choices?.[0]?.message?.content || "";
   }
   async call(task, messages, options = {}) {
+    let nsmMeta = null;
+    if (this.nsm) {
+      const wrapped = await this.nsm.wrap(messages, task, options.context || {});
+      messages = wrapped.messages;
+      nsmMeta = wrapped.metadata;
+    }
     const backend = TASK_BACKEND[task] || "cf";
+    let result = "";
     try {
       if (backend === "cf") {
-        return await this.callCfAI(messages, options);
+        result = await this.callCfAI(messages, options);
       } else {
-        return await this.callOpenRouter(messages, options);
+        result = await this.callOpenRouter(messages, options);
       }
     } catch (err) {
       const fallback = backend === "cf" ? "openrouter" : "cf";
       try {
         if (fallback === "openrouter") {
-          return await this.callOpenRouter(messages, options);
+          result = await this.callOpenRouter(messages, options);
         } else {
-          return await this.callCfAI(messages, options);
+          result = await this.callCfAI(messages, options);
         }
       } catch (fallbackErr) {
         throw new Error(`LLM backend failed: ${err.message}, fallback also failed: ${fallbackErr.message}`);
       }
     }
+    if (this.nsm && result && nsmMeta) {
+      await this.nsm.postProcess(result, nsmMeta.domain, task);
+    }
+    if (nsmMeta) options._nsmMeta = nsmMeta;
+    return result;
   }
   async classify(content, domainHints = []) {
     const prompt = [
@@ -2832,6 +3036,7 @@ var Workspace = class extends DurableObject {
   clusters = {};
   domainStacks = {};
   llm = null;
+  nsm = null;
   constructor(ctx, env) {
     super(ctx, env);
     this.env = env;
@@ -2854,10 +3059,17 @@ var Workspace = class extends DurableObject {
       this.llm = new LLMRouter(
         this.env.AI,
         this.env.OPENROUTER_API_KEY || "",
-        this.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1"
+        this.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
+        this.getNSM()
       );
     }
     return this.llm;
+  }
+  getNSM() {
+    if (!this.nsm && this.env) {
+      this.nsm = new NSM_CLASS(this.env.CONTEXT_KV || null);
+    }
+    return this.nsm;
   }
   getDomainManager(domain) {
     if (!this.env) return null;
@@ -3050,14 +3262,18 @@ var Workspace = class extends DurableObject {
       if (mimeType === "application/pdf" || mimeType.startsWith("image/")) {
         const input = mimeType.startsWith("image/") ? { image: Array.from(bytes) } : { document: Array.from(bytes) };
         const systemPrompt = mimeType.startsWith("image/") ? "You are a document analysis engine. Describe this image in detail. Extract any visible text, describe the layout, and identify key elements. Be thorough but concise." : "You are a PDF document parser. Extract ALL text content from this PDF document. Preserve the structure: headings, paragraphs, lists, tables. Output clean, readable text with proper markdown formatting (## for headings, - for lists, etc). Preserve all information faithfully.";
+        const nsmMessages = [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: mimeType.startsWith("image/") ? [{ type: "image", image: input.image }] : `Extract and format all text content from this document. Preserve headings, lists, and structure.` }
+        ];
+        const nsm = this.getNSM();
+        const { messages: nsmEnriched, metadata: nsmMeta } = nsm ? await nsm.wrap(nsmMessages, "import", { domain: context?.domain }) : { messages: nsmMessages, metadata: null };
         const aiResponse = await this.env.AI.run("@cf/meta/llama-3.1-8b-instruct-fast", {
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: mimeType.startsWith("image/") ? [{ type: "image", image: input.image }] : `Extract and format all text content from this document. Preserve headings, lists, and structure.` }
-          ],
+          messages: nsmEnriched,
           max_tokens: 2048
         });
         extractedText = aiResponse.response ?? JSON.stringify(aiResponse);
+        if (nsm && extractedText && nsmMeta) await nsm.postProcess(extractedText, nsmMeta.domain, "import");
       } else if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
         try {
           const uint8arr = new Uint8Array(bytes);
@@ -3130,14 +3346,18 @@ Instruction: ${promptText || "(none)"}
 
 Data:
 ${combined}`;
+      const nsmMsgs2 = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ];
+      const nsm2 = this.getNSM();
+      const nsmW2 = nsm2 ? await nsm2.wrap(nsmMsgs2, "manipulate", {}) : { messages: nsmMsgs2, metadata: null };
       const aiResponse = await this.env.AI.run("@cf/meta/llama-3.1-8b-instruct-fast", {
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
+        messages: nsmW2.messages,
         max_tokens: 1024
       });
       const resultText = aiResponse.response ?? JSON.stringify(aiResponse);
+      if (nsm2 && resultText && nsmW2.metadata) await nsm2.postProcess(resultText, nsmW2.metadata.domain, "manipulate");
       const newCard = {
         id: "card_" + crypto.randomUUID(),
         type: "Document",
@@ -3210,16 +3430,20 @@ ${combined}`;
       const { cardId, content } = await request.json();
       if (!content) return json({ classification: { domain: "general", principles: [] } });
       try {
-        const aiResponse = await this.env.AI.run("@cf/meta/llama-3.1-8b-instruct-fast", {
-          messages: [
-            { role: "system", content: "You are a domain classification engine. Given content, determine: 1) the primary domain (legal, educational, medical, technical, general), 2) propose 2-3 governing principles that should apply to this content. Return JSON with { domain, principles: [{ text, domainTag }] }." },
-            { role: "user", content: `Classify this content and propose governing principles:
+        const nsmMsgs3 = [
+          { role: "system", content: "You are a domain classification engine. Given content, determine: 1) the primary domain (legal, educational, medical, technical, general), 2) propose 2-3 governing principles that should apply to this content. Return JSON with { domain, principles: [{ text, domainTag }] }." },
+          { role: "user", content: `Classify this content and propose governing principles:
 
 ${content.slice(0, 2e3)}` }
-          ],
+        ];
+        const nsm3 = this.getNSM();
+        const nsmW3 = nsm3 ? await nsm3.wrap(nsmMsgs3, "classify", { domain: content?.domain }) : { messages: nsmMsgs3, metadata: null };
+        const aiResponse = await this.env.AI.run("@cf/meta/llama-3.1-8b-instruct-fast", {
+          messages: nsmW3.messages,
           max_tokens: 512
         });
         const text = aiResponse.response ?? "";
+        if (nsm3 && text && nsmW3.metadata) await nsm3.postProcess(text, nsmW3.metadata.domain, "classify");
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const classification = JSON.parse(jsonMatch[0]);
@@ -3265,14 +3489,18 @@ ${content.slice(0, 2e3)}` }
 
 Active Principles:
 ${principleContext || "(none \u2014 general mode)"}`;
+      const nsmMsgs4 = [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: instruction }
+      ];
+      const nsm4 = this.getNSM();
+      const nsmW4 = nsm4 ? await nsm4.wrap(nsmMsgs4, "instruct", { domain: domains?.[0] }) : { messages: nsmMsgs4, metadata: null };
       const aiResponse = await this.env.AI.run("@cf/meta/llama-3.1-8b-instruct-fast", {
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: instruction }
-        ],
+        messages: nsmW4.messages,
         max_tokens: 1024
       });
       const result = aiResponse.response ?? "";
+      if (nsm4 && result && nsmW4.metadata) await nsm4.postProcess(result, nsmW4.metadata.domain, "instruct");
       const coverage = activePrinciples.length > 0 ? Math.min(0.85, 0.5 + activePrinciples.length * 0.05) : 0.3;
       return json({ result, confidence: `BASE ${(coverage * 100).toFixed(0)}%`, coverage });
     }
@@ -3283,17 +3511,21 @@ ${principleContext || "(none \u2014 general mode)"}`;
       if (activePrinciples.length === 0) return json({ violations: [], suggestions: ["No principles ratified yet. Import content to acquire principles."] });
       const principleList = activePrinciples.map((p) => `- [${p.domainTag}/${p.ratificationStatus}] ${p.text}`).join("\n");
       try {
-        const aiResponse = await this.env.AI.run("@cf/meta/llama-3.1-8b-instruct-fast", {
-          messages: [
-            { role: "system", content: `You are a compliance checker. Compare the user's content against these ratified principles. Return JSON: { violations: [strings], suggestions: [strings] }. Violations are hard conflicts. Suggestions are improvements.
+        const nsmMsgs5 = [
+          { role: "system", content: `You are a compliance checker. Compare the user's content against these ratified principles. Return JSON: { violations: [strings], suggestions: [strings] }. Violations are hard conflicts. Suggestions are improvements.
 
 Principles:
 ${principleList}` },
-            { role: "user", content: content.slice(0, 3e3) }
-          ],
+          { role: "user", content: content.slice(0, 3e3) }
+        ];
+        const nsm5 = this.getNSM();
+        const nsmW5 = nsm5 ? await nsm5.wrap(nsmMsgs5, "compliance", {}) : { messages: nsmMsgs5, metadata: null };
+        const aiResponse = await this.env.AI.run("@cf/meta/llama-3.1-8b-instruct-fast", {
+          messages: nsmW5.messages,
           max_tokens: 512
         });
         const text = aiResponse.response ?? "";
+        if (nsm5 && text && nsmW5.metadata) await nsm5.postProcess(text, nsmW5.metadata.domain, "compliance");
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (jsonMatch) return json(JSON.parse(jsonMatch[0]));
       } catch {
@@ -3819,6 +4051,54 @@ ${principleList}` },
       await this.persist();
       this.broadcast({ type: "card_updated", card });
       return json({ ok: true, card, elevated: true });
+    }
+    // ── NSM: list acquired domains ──
+    if (url.pathname === "/api/nsm/domains" && request.method === "GET") {
+      const nsm = this.getNSM();
+      const domains = await nsm.listDomains();
+      return json({ domains });
+    }
+    // ── NSM: create/acquire domain ──
+    if (url.pathname === "/api/nsm/domains" && request.method === "POST") {
+      const { domain, principles } = await request.json();
+      if (!domain) return json({ error: "domain required" }, 400);
+      const nsm = this.getNSM();
+      await nsm.acquireDomain(domain, principles || []);
+      return json({ ok: true, domain });
+    }
+    // ── NSM: get domain patterns ──
+    const nsmDomainMatch = url.pathname.match(/^\/api\/nsm\/domains\/([^/]+)$/);
+    if (nsmDomainMatch && request.method === "GET") {
+      const domain = nsmDomainMatch[1];
+      const nsm = this.getNSM();
+      const patterns = await nsm.getDomainPatterns(domain);
+      const principles = await nsm.getDomainPrinciples(domain);
+      const confidence = await nsm.getDomainConfidence(domain);
+      const recall = await nsm.getRecallLog(domain);
+      return json({ domain, patterns, principles, confidence, recall });
+    }
+    // ── NSM: add patterns to domain ──
+    if (nsmDomainMatch && request.method === "POST") {
+      const domain = nsmDomainMatch[1];
+      const { patterns } = await request.json();
+      const nsm = this.getNSM();
+      const existing = await nsm.getDomainPatterns(domain);
+      const merged = [...existing];
+      for (const p of (patterns || [])) {
+        if (!merged.some(e => e.value === p.value)) merged.push(p);
+      }
+      await nsm.putDomainPatterns(domain, merged);
+      return json({ ok: true, domain, patternCount: merged.length });
+    }
+    // ── NSM: recall log ──
+    if (url.pathname === "/api/nsm/recall" && request.method === "GET") {
+      const nsm = this.getNSM();
+      const idx = await nsm.getDomainIndex();
+      const all = {};
+      for (const d of idx.domains) {
+        all[d] = await nsm.getRecallLog(d);
+      }
+      return json({ recall: all });
     }
     return json({ error: "Not found" }, 404);
   }
