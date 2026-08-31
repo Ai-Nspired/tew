@@ -1,21 +1,20 @@
-#!/usr/bin/env node
 const fs = require('fs');
-const path = require('path');
 
-const src = fs.readFileSync(path.join(__dirname, 'worker.js'), 'utf8');
-const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+// Read the current worker.js (modified version with my changes already in it)
+// and the new index.html
+const src = fs.readFileSync('/tmp/tew/worker.js', 'utf8');
+const html = fs.readFileSync('/tmp/tew/index.html', 'utf8');
 
-// Escape for template literal
+// Escape for embedding in JS backtick template literal
+// Order matters: backslashes first, then backticks, then ${}
 const escaped = html
-  .replace(/\\/g, '\\\\')
-  .replace(/`/g, '\\`')
-  .replace(/\$\{/g, '\\${');
+  .replace(/\\/g, '\\\\')    // \ → \\
+  .replace(/`/g, '\\`')      // ` → \`
+  .replace(/\$\{/g, '\\${'); // ${ → \${
 
-// Find INDEX_HTML boundaries by character position
+// Find INDEX_HTML boundaries
 const idx = src.indexOf('var INDEX_HTML');
 const openPos = src.indexOf('`', idx);
-
-// Find matching close
 let pos = openPos + 1;
 while (pos < src.length) {
   if (src[pos] === '\\') { pos += 2; continue; }
@@ -23,9 +22,7 @@ while (pos < src.length) {
   pos++;
 }
 
-const before = src.substring(0, openPos + 1);
-const after = src.substring(pos);
-const output = before + escaped + after;
-
-fs.writeFileSync(path.join(__dirname, 'worker.js'), output);
-console.log(`Built worker.js: ${output.length} bytes (HTML: ${html.length} → escaped: ${escaped.length})`);
+const output = src.substring(0, openPos + 1) + escaped + src.substring(pos);
+fs.writeFileSync('/tmp/tew/worker.js', output);
+console.log('Built worker.js:', output.length, 'bytes');
+console.log('INDEX_HTML replaced:', pos - openPos - 1, '→', escaped.length, 'bytes');
