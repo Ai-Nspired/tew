@@ -205,6 +205,7 @@
       <button class="ctrl-btn" onclick="promptAudit()" style="border-color:#4a1a2a;color:#ff4a6a;">🔍 Audit</button>
       <button class="ctrl-btn" onclick="openTabList('eitl')" style="border-color:#2a1a4a;color:#c84aff;">⚙ EITL</button>
       <button class="ctrl-btn" onclick="promptDomain()" style="border-color:#2a2a1a;color:#c8c84a;">🌍 Domain</button>
+      <button class="ctrl-btn" onclick="openNSM()" style="border-color:#1a3a2a;color:#4affa0;">🧠 NSM</button>
     </div>
     <div class="flex gap-2 items-center">
       <span id="wsStatus" class="ws-status ws-connecting">connecting…</span>
@@ -2396,6 +2397,101 @@
         const data = await res.json();
         return data.domains || [];
       } catch { return []; }
+    }
+
+    // ── NSM Panel ──
+    async function openNSM() {
+      const cardCounter = cards.length;
+      const cardId = 'nsm_' + Date.now();
+      const card = {
+        id: cardId,
+        type: 'Document',
+        title: '🧠 NSM Domains',
+        content: 'Loading NSM domains...',
+        x: cardCounter * 30 + 40,
+        y: cardCounter * 30 + 40,
+        width: 520,
+        height: 420,
+      };
+      cards.push(card);
+      renderCard(card, card.x, card.y);
+      cardCounter++;
+      updateStatus();
+      try {
+        const res = await fetch('/api/nsm/domains');
+        const data = await res.json();
+        let html = '';
+        if (!data.domains || data.domains.length === 0) {
+          html = '<div style="color:#666;text-align:center;padding:30px;">No domains acquired yet.<br><span style="color:#444;font-size:11px;">Domains are created when NSM patterns build enough consensus.</span></div>';
+        } else {
+          for (const d of data.domains) {
+            html += '<div class="nsm-domain" style="background:#0a0a1a;border:1px solid #1a2a4a;border-radius:8px;padding:10px;margin-bottom:8px;">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+            html += '<span style="color:#4affa0;font-weight:bold;">' + d.name + '</span>';
+            html += '<span style="color:#666;font-size:10px;">conf: ' + (d.confidence * 100).toFixed(1) + '% | ' + d.principleCount + ' principles | ' + d.patternCount + ' patterns</span>';
+            html += '</div>';
+            if (d.principles && d.principles.length > 0) {
+              html += '<div style="margin-top:6px;">';
+              html += '<div style="color:#888;font-size:10px;margin-bottom:3px;">Domain Principles:</div>';
+              for (const p of d.principles.slice(0, 5)) {
+                const txt = typeof p === 'string' ? p : p.text || '';
+                html += '<div style="color:#aaa;font-size:11px;padding:2px 0;">• ' + txt + '</div>';
+              }
+              if (d.principles.length > 5) html += '<div style="color:#666;font-size:10px;">+ ' + (d.principles.length - 5) + ' more</div>';
+              html += '</div>';
+            }
+            if (d.patterns && d.patterns.length > 0) {
+              html += '<div style="margin-top:4px;">';
+              html += '<div style="color:#888;font-size:10px;margin-bottom:3px;">Cached Patterns:</div>';
+              const tags = d.patterns.slice(0, 10).map(p => '<span style="background:#1a1a2a;border:1px solid #2a2a4a;border-radius:4px;padding:1px 5px;font-size:9px;color:#888;">' + p.value + ' ×' + p.frequency + '</span>').join(' ');
+              html += '<div style="display:flex;flex-wrap:wrap;gap:3px;">' + tags + '</div>';
+              if (d.patterns.length > 10) html += '<div style="color:#666;font-size:10px;margin-top:2px;">+ ' + (d.patterns.length - 10) + ' more</div>';
+              html += '</div>';
+            }
+            html += '</div>';
+          }
+        }
+        html += '<div style="margin-top:8px;display:flex;gap:6px;">';
+        html += '<button class="ctrl-btn" onclick="nsmRefresh()" style="font-size:10px;padding:3px 8px;border-color:#4affa0;color:#4affa0;">Refresh</button>';
+        html += '<button class="ctrl-btn" onclick="nsmAcquireDomain()" style="font-size:10px;padding:3px 8px;border-color:#c8c84a;color:#c8c84a;">+ Acquire Domain</button>';
+        html += '</div>';
+        const el = document.querySelector('[data-card-id="' + cardId + '"] .card-body');
+        if (el) el.innerHTML = html;
+      } catch (e) {
+        const el = document.querySelector('[data-card-id="' + cardId + '"] .card-body');
+        if (el) el.innerHTML = '<div style="color:#ff4a6a;">Failed to load NSM: ' + e.message + '</div>';
+      }
+    }
+
+    async function nsmRefresh() {
+      const nsmCards = cards.filter(c => c.title === '🧠 NSM Domains');
+      if (nsmCards.length > 0) {
+        const cardId = nsmCards[nsmCards.length - 1].id;
+        const el = document.querySelector('[data-card-id="' + cardId + '"] .card-body');
+        if (el) el.innerHTML = '<div style="color:#666;text-align:center;padding:20px;">Refreshing...</div>';
+        openNSM();
+      }
+    }
+
+    async function nsmAcquireDomain() {
+      const domain = prompt('Domain name to acquire:');
+      if (!domain) return;
+      try {
+        const res = await fetch('/api/nsm/domains', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domain, principles: [] }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('Domain "' + domain + '" acquired', 'success');
+          openNSM();
+        } else {
+          showToast('Failed: ' + (data.error || 'unknown'), 'error');
+        }
+      } catch (e) {
+        showToast('Error: ' + e.message, 'error');
+      }
     }
 
     init();
