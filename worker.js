@@ -307,6 +307,20 @@ var INDEX_HTML = `<!DOCTYPE html>
     .query-result .result-type { font-size: 9px; text-transform: uppercase; color: #888; }
     .query-result .result-snippet { color: #aaa; margin-top: 2px; }
     .query-result .result-relevance { font-size: 10px; color: #4aff8a; float: right; }
+    .kv-picker { max-height: 300px; overflow-y: auto; border: 1px solid #2a2a4a; border-radius: 6px; background: #0d0d1a; }
+    .kv-picker-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #1a1a2e; cursor: pointer; font-size: 11px; transition: background 0.1s; }
+    .kv-picker-item:last-child { border-bottom: none; }
+    .kv-picker-item:hover { background: #1a1a2e; }
+    .kv-picker-item.selected { background: #1a2a4a; border-left: 2px solid #4a9fff; }
+    .kv-picker-item input[type="checkbox"] { margin-top: 2px; accent-color: #ff6b1a; flex-shrink: 0; }
+    .kv-picker-item .kv-ns { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 600; text-transform: uppercase; flex-shrink: 0; }
+    .kv-ns-KV_NAMESPACES { background: #1a3a1a; color: #8aff4a; }
+    .kv-ns-ORP_KV { background: #3a1a4a; color: #c14aff; }
+    .kv-ns-AUDITS_KV { background: #4a1a2a; color: #ff4a6a; }
+    .kv-ns-CONTEXT_KV { background: #1a2a4a; color: #4a9fff; }
+    .kv-picker-item .kv-key { color: #aaa; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .kv-picker-item .kv-preview { color: #666; font-size: 10px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+    .kv-picker-controls { display: flex; gap: 6px; padding: 6px 0; align-items: center; }
     .domain-stack-panel { display: flex; gap: 6px; align-items: center; padding: 4px 0; flex-wrap: wrap; }
     .domain-chip { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; cursor: pointer; border: 1px solid #2a2a4a; }
     .domain-chip.primary { border-color: #ff6b1a; background: #ff6b1a22; color: #ff6b1a; }
@@ -796,84 +810,94 @@ var INDEX_HTML = `<!DOCTYPE html>
           </details>
         \`;
       } else if (card.type === 'Query') {
-        const results = card.results || [];
-        const domainLabel = card.domainStack?.primary || card.domains?.[0] || 'general';
-        contentHtml = \`
-          <div style="padding:4px 0;">
-            <div class="card-toolbar" style="margin-bottom:0;">
-              <button class="active" data-mode="edit" onclick="toggleCardMode('\${card.id}','edit')">Edit</button>
-              <button data-mode="preview" onclick="toggleCardMode('\${card.id}','preview')">Preview</button>
-            </div>
-            \${fmtBar}
-            <textarea data-content="\${card.id}" placeholder="Query notes…">\${escapeHtml(card.content || '')}</textarea>
-            <div class="md-preview" data-preview="\${card.id}" style="display:none;"></div>
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
-              <span style="font-size:10px;color:#888;">Domain:</span>
-              <span class="domain-chip primary" style="font-size:9px;">\${domainLabel}</span>
-              <span style="font-size:10px;color:#888;margin-left:auto;">Coverage:</span>
-              <span style="font-size:11px;color:#4aff8a;font-weight:600;">\${Math.round((card.coverageScore || 0) * 100)}%</span>
-            </div>
-            <div style="font-size:10px;color:#888;margin-bottom:4px;">\${results.length} result(s) · \${(card.principlesApplied || []).length} principles applied</div>
-            <div class="query-results" data-query-results="\${card.id}">
-              \${results.map((r, i) => \`
-                <div class="query-result" onclick="materializeQueryResult('\${card.id}', \${i})">
-                  <div style="display:flex;justify-content:space-between;">
-                    <span class="result-type">\${r.sourceType}</span>
-                    <span class="result-relevance">\${Math.round((r.relevance || 0) * 100)}%</span>
+        if (card._pickerHtml) {
+          contentHtml = card._pickerHtml;
+        } else {
+          const results = card.results || [];
+          const domainLabel = card.domainStack?.primary || card.domains?.[0] || 'general';
+          contentHtml = \`
+            <div style="padding:4px 0;">
+              <div class="card-toolbar" style="margin-bottom:0;">
+                <button class="active" data-mode="edit" onclick="toggleCardMode('\${card.id}','edit')">Edit</button>
+                <button data-mode="preview" onclick="toggleCardMode('\${card.id}','preview')">Preview</button>
+              </div>
+              \${fmtBar}
+              <textarea data-content="\${card.id}" placeholder="Query notes…">\${escapeHtml(card.content || '')}</textarea>
+              <div class="md-preview" data-preview="\${card.id}" style="display:none;"></div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+                <span style="font-size:10px;color:#888;">Domain:</span>
+                <span class="domain-chip primary" style="font-size:9px;">\${domainLabel}</span>
+                <span style="font-size:10px;color:#888;margin-left:auto;">Coverage:</span>
+                <span style="font-size:11px;color:#4aff8a;font-weight:600;">\${Math.round((card.coverageScore || 0) * 100)}%</span>
+              </div>
+              \${card.kvSelectedEntries && card.kvSelectedEntries.length ? '<div style="font-size:10px;color:#888;margin-bottom:4px;">' + card.kvSelectedEntries.length + ' KV entry(ies) selected</div>' : ''}
+              <div style="font-size:10px;color:#888;margin-bottom:4px;">\${results.length} result(s) · \${(card.principlesApplied || []).length} principles applied</div>
+              <div class="query-results" data-query-results="\${card.id}">
+                \${results.map((r, i) => \`
+                  <div class="query-result" onclick="materializeQueryResult('\${card.id}', \${i})">
+                    <div style="display:flex;justify-content:space-between;">
+                      <span class="result-type">\${r.sourceType}</span>
+                      <span class="result-relevance">\${Math.round((r.relevance || 0) * 100)}%</span>
+                    </div>
+                    <div class="result-snippet">\${escapeHtml((r.snippet || '').slice(0, 120))}\${(r.snippet || '').length > 120 ? '...' : ''}</div>
                   </div>
-                  <div class="result-snippet">\${escapeHtml((r.snippet || '').slice(0, 120))}\${(r.snippet || '').length > 120 ? '...' : ''}</div>
-                </div>
-              \`).join('')}
+                \`).join('')}
+              </div>
+              <div style="margin-top:6px;display:flex;gap:6px;">
+                <button onclick="rerunQuery('\${card.id}')" class="ctrl-btn" style="flex:1;font-size:11px;padding:4px 8px;">Re-run</button>
+              </div>
             </div>
-            <div style="margin-top:6px;display:flex;gap:6px;">
-              <button onclick="rerunQuery('\${card.id}')" class="ctrl-btn" style="flex:1;font-size:11px;padding:4px 8px;">Re-run</button>
-            </div>
-          </div>
-        \`;
+          \`;
+        }
       } else if (card.type === 'Audit') {
-        const findings = card.findings || [];
-        const cov = card.principleCoverage || { total: 0, satisfied: 0, violated: 0, unaddressed: 0 };
-        const statusColor = card.status === 'pass' ? '#4aff8a' : card.status === 'conditional' ? '#ffaa4a' : '#ff4a4a';
-        contentHtml = \`
-          <div style="padding:4px 0;" class="audit-\${card.status || 'fail'}">
-            <div class="card-toolbar" style="margin-bottom:0;">
-              <button class="active" data-mode="edit" onclick="toggleCardMode('\${card.id}','edit')">Edit</button>
-              <button data-mode="preview" onclick="toggleCardMode('\${card.id}','preview')">Preview</button>
-            </div>
-            \${fmtBar}
-            <textarea data-content="\${card.id}" placeholder="Audit notes…">\${escapeHtml(card.content || '')}</textarea>
-            <div class="md-preview" data-preview="\${card.id}" style="display:none;"></div>
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-              <span style="font-size:12px;font-weight:700;color:\${statusColor};text-transform:uppercase;">\${card.status || 'fail'}</span>
-              <span style="font-size:11px;color:#888;">Confidence:</span>
-              <span style="font-size:11px;color:\${statusColor};font-weight:600;">\${Math.round((card.overallConfidence || 0) * 100)}%</span>
-              <span style="font-size:10px;color:#888;margin-left:auto;">Scope: \${card.auditScope || 'compliance'}</span>
-            </div>
-            <div class="audit-coverage">
-              <div class="cov-item"><div class="cov-dot" style="background:#4aff8a;"></div> \${cov.satisfied} satisfied</div>
-              <div class="cov-item"><div class="cov-dot" style="background:#ffaa4a;"></div> \${cov.violated} partial</div>
-              <div class="cov-item"><div class="cov-dot" style="background:#ff4a4a;"></div> \${cov.unaddressed} unaddressed</div>
-            </div>
-            <div style="font-size:10px;color:#888;margin:4px 0;">\${findings.length} finding(s)</div>
-            <div class="audit-findings" data-audit-findings="\${card.id}" style="max-height:200px;overflow-y:auto;">
-              \${findings.slice(0, 20).map(f => \`
-                <div class="audit-finding \${f.severity}">
-                  <div style="display:flex;justify-content:space-between;">
-                    <span style="font-weight:600;color:\${f.severity === 'violation' ? '#ff4a4a' : f.severity === 'warning' ? '#ffaa4a' : '#4a9fff'};">\${f.severity.toUpperCase()}</span>
-                    <span style="color:#888;font-size:10px;">\${Math.round((f.confidence || 0) * 100)}%</span>
+        if (card._pickerHtml) {
+          contentHtml = card._pickerHtml;
+        } else {
+          const findings = card.findings || [];
+          const cov = card.principleCoverage || { total: 0, satisfied: 0, violated: 0, unaddressed: 0 };
+          const statusColor = card.status === 'pass' ? '#4aff8a' : card.status === 'conditional' ? '#ffaa4a' : '#ff4a4a';
+          contentHtml = \`
+            <div style="padding:4px 0;" class="audit-\${card.status || 'fail'}">
+              <div class="card-toolbar" style="margin-bottom:0;">
+                <button class="active" data-mode="edit" onclick="toggleCardMode('\${card.id}','edit')">Edit</button>
+                <button data-mode="preview" onclick="toggleCardMode('\${card.id}','preview')">Preview</button>
+              </div>
+              \${fmtBar}
+              <textarea data-content="\${card.id}" placeholder="Audit notes…">\${escapeHtml(card.content || '')}</textarea>
+              <div class="md-preview" data-preview="\${card.id}" style="display:none;"></div>
+              \${card.kvSelectedEntries && card.kvSelectedEntries.length ? '<div style="font-size:10px;color:#888;margin-bottom:4px;">' + card.kvSelectedEntries.length + ' KV entry(ies) audited</div>' : ''}
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <span style="font-size:12px;font-weight:700;color:\${statusColor};text-transform:uppercase;">\${card.status || 'fail'}</span>
+                <span style="font-size:11px;color:#888;">Confidence:</span>
+                <span style="font-size:11px;color:\${statusColor};font-weight:600;">\${Math.round((card.overallConfidence || 0) * 100)}%</span>
+                <span style="font-size:10px;color:#888;margin-left:auto;">Scope: \${card.auditScope || 'compliance'}</span>
+              </div>
+              <div class="audit-coverage">
+                <div class="cov-item"><div class="cov-dot" style="background:#4aff8a;"></div> \${cov.satisfied} satisfied</div>
+                <div class="cov-item"><div class="cov-dot" style="background:#ffaa4a;"></div> \${cov.violated} partial</div>
+                <div class="cov-item"><div class="cov-dot" style="background:#ff4a4a;"></div> \${cov.unaddressed} unaddressed</div>
+              </div>
+              <div style="font-size:10px;color:#888;margin:4px 0;">\${findings.length} finding(s)</div>
+              <div class="audit-findings" data-audit-findings="\${card.id}" style="max-height:200px;overflow-y:auto;">
+                \${findings.slice(0, 20).map(f => \`
+                  <div class="audit-finding \${f.severity}">
+                    <div style="display:flex;justify-content:space-between;">
+                      <span style="font-weight:600;color:\${f.severity === 'violation' ? '#ff4a4a' : f.severity === 'warning' ? '#ffaa4a' : '#4a9fff'};">\${f.severity.toUpperCase()}</span>
+                      <span style="color:#888;font-size:10px;">\${Math.round((f.confidence || 0) * 100)}%</span>
+                    </div>
+                    <div style="color:#ccc;margin:2px 0;">\${escapeHtml(f.description)}</div>
+                    \${f.suggestion ? \`<div style="color:#888;font-size:10px;">Suggestion: \${escapeHtml(f.suggestion)}</div>\` : ''}
                   </div>
-                  <div style="color:#ccc;margin:2px 0;">\${escapeHtml(f.description)}</div>
-                  \${f.suggestion ? \`<div style="color:#888;font-size:10px;">Suggestion: \${escapeHtml(f.suggestion)}</div>\` : ''}
-                </div>
-              \`).join('')}
-              \${findings.length > 20 ? \`<div style="text-align:center;color:#888;font-size:10px;padding:4px;">+\${findings.length - 20} more findings</div>\` : ''}
+                \`).join('')}
+                \${findings.length > 20 ? \`<div style="text-align:center;color:#888;font-size:10px;padding:4px;">+\${findings.length - 20} more findings</div>\` : ''}
+              </div>
+              <div style="margin-top:6px;display:flex;gap:6px;">
+                <button onclick="reAudit('\${card.id}')" class="ctrl-btn" style="flex:1;font-size:11px;padding:4px 8px;">Re-audit</button>
+                <button onclick="exportAudit('\${card.id}')" class="ctrl-btn" style="flex:1;font-size:11px;padding:4px 8px;">Export</button>
+              </div>
             </div>
-            <div style="margin-top:6px;display:flex;gap:6px;">
-              <button onclick="reAudit('\${card.id}')" class="ctrl-btn" style="flex:1;font-size:11px;padding:4px 8px;">Re-audit</button>
-              <button onclick="exportAudit('\${card.id}')" class="ctrl-btn" style="flex:1;font-size:11px;padding:4px 8px;">Export</button>
-            </div>
-          </div>
-        \`;
+          \`;
+        }
       } else if (card.type === 'DomainBrowser') {
         const assets = card.assets || [];
         const dMeta = { general: {color:'#888'}, legal: {color:'#4ab8ff'}, educational: {color:'#8aff4a'}, medical: {color:'#ff4a8a'}, technical: {color:'#c14aff'} };
@@ -2019,9 +2043,104 @@ var INDEX_HTML = `<!DOCTYPE html>
 
     // ── Truth-Engine Query ──
     function promptQuery() {
-      const query = prompt('Enter truth-engine query:');
-      if (query) runQuery(query, ['general']);
+      promptQueryWithKVPicker();
     }
+    async function promptQueryWithKVPicker() {
+      showSpinner('Loading KV entries...');
+      let entries = [];
+      try {
+        const res = await fetch(API('/kv/all'));
+        const data = await res.json();
+        entries = data.entries || [];
+      } catch (e) {
+        hideSpinner();
+        showToast('Failed to load KV entries: ' + e.message, 'error');
+        return;
+      }
+      hideSpinner();
+      const cardId = 'card_' + crypto.randomUUID();
+      const grouped = {};
+      for (const e of entries) {
+        if (!grouped[e.ns]) grouped[e.ns] = [];
+        grouped[e.ns].push(e);
+      }
+      let listHtml = '';
+      for (const [ns, items] of Object.entries(grouped)) {
+        listHtml += '<div style="font-size:10px;font-weight:600;color:#888;padding:6px 8px 2px;text-transform:uppercase;border-top:1px solid #1a1a2e;">' + ns + ' (' + items.length + ')</div>';
+        for (const item of items) {
+          const preview = typeof item.value === 'object' ? JSON.stringify(item.value).slice(0, 80) : String(item.value).slice(0, 80);
+          listHtml += '<label class="kv-picker-item" data-kv-id="' + item.id + '">'
+            + '<input type="checkbox" class="kv-check" data-ns="' + item.ns + '" data-key="' + item.key + '" data-id="' + item.id + '">'
+            + '<span class="kv-ns kv-ns-' + item.ns + '">' + item.ns.replace('_KV','').replace('KV_','') + '</span>'
+            + '<div style="flex:1;min-width:0;"><div class="kv-key">' + escapeHtml(item.key) + '</div><div class="kv-preview">' + escapeHtml(preview) + '</div></div>'
+            + '</label>';
+        }
+      }
+      if (entries.length === 0) listHtml = '<div style="color:#666;font-size:11px;padding:12px;text-align:center;">No KV entries found.</div>';
+      const card = {
+        id: cardId,
+        type: 'Query',
+        title: '🔎 New Query — Select KV Sources',
+        content: '',
+        queryText: '',
+        domains: ['general'],
+        results: [],
+        coverageScore: 0,
+        principlesApplied: [],
+        kvPickerEntries: entries,
+        splitView: false,
+      };
+      card._pickerHtml = '<div style="padding:4px 0;">'
+        + '<div style="font-size:10px;color:#888;margin-bottom:4px;">Select KV entries to query against (' + entries.length + ' total)</div>'
+        + '<div class="kv-picker-controls">'
+        + '<button onclick="kvPickerSelectAll(\\'' + cardId + '\\')" class="ctrl-btn" style="font-size:10px;padding:2px 6px;">Select All</button>'
+        + '<button onclick="kvPickerSelectNone(\\'' + cardId + '\\')" class="ctrl-btn" style="font-size:10px;padding:2px 6px;">None</button>'
+        + '<span id="kv-picker-count-' + cardId + '" style="font-size:10px;color:#888;margin-left:auto;">0 selected</span>'
+        + '</div>'
+        + '<div class="kv-picker" data-kv-picker="' + cardId + '">' + listHtml + '</div>'
+        + '<div style="margin-top:8px;">'
+        + '<textarea id="kv-query-input-' + cardId + '" placeholder="Enter query text..." style="width:100%;background:#0d0d1a;color:#e0e0e0;border:1px solid #2a2a4a;border-radius:6px;padding:6px 8px;font-size:12px;min-height:48px;resize:vertical;font-family:monospace;"></textarea>'
+        + '</div>'
+        + '<div style="margin-top:6px;display:flex;gap:6px;">'
+        + '<button onclick="runQueryFromPicker(\\'' + cardId + '\\')" class="ctrl-btn" style="flex:1;font-size:11px;padding:4px 8px;border-color:#4a9fff;color:#4a9fff;">Run Query</button>'
+        + '</div>'
+        + '</div>';
+      cards.push(card);
+      renderCard(card, cardCounter * 30 + 40, cardCounter * 30 + 40);
+      cardCounter++;
+      updateStatus();
+      const pickerEl = document.querySelector('[data-kv-picker="' + cardId + '"]');
+      if (pickerEl) {
+        pickerEl.addEventListener('change', (e) => {
+          if (e.target.classList.contains('kv-check')) {
+            e.target.closest('.kv-picker-item')?.classList.toggle('selected', e.target.checked);
+          }
+          const count = pickerEl.querySelectorAll('.kv-check:checked').length;
+          const countEl = document.getElementById('kv-picker-count-' + cardId);
+          if (countEl) countEl.textContent = count + ' selected';
+        });
+      }
+    }
+
+    function kvPickerSelectAll(cardId) {
+      const picker = document.querySelector('[data-kv-picker="' + cardId + '"]');
+      if (!picker) return;
+      picker.querySelectorAll('.kv-check').forEach(cb => { cb.checked = true; });
+      picker.querySelectorAll('.kv-picker-item').forEach(item => { item.classList.add('selected'); });
+      const count = picker.querySelectorAll('.kv-check:checked').length;
+      const countEl = document.getElementById('kv-picker-count-' + cardId);
+      if (countEl) countEl.textContent = count + ' selected';
+    }
+
+    function kvPickerSelectNone(cardId) {
+      const picker = document.querySelector('[data-kv-picker="' + cardId + '"]');
+      if (!picker) return;
+      picker.querySelectorAll('.kv-check').forEach(cb => { cb.checked = false; });
+      picker.querySelectorAll('.kv-picker-item').forEach(item => { item.classList.remove('selected'); });
+      const countEl = document.getElementById('kv-picker-count-' + cardId);
+      if (countEl) countEl.textContent = '0 selected';
+    }
+
     async function runQuery(queryText, domains) {
       showSpinner('Querying...');
       try {
@@ -2036,11 +2155,59 @@ var INDEX_HTML = `<!DOCTYPE html>
           if (data.card && !cards.find(c => c.id === data.card.id)) {
             cards.push(data.card); renderCard(data.card, cardCounter * 30 + 40, cardCounter * 30 + 40); cardCounter++; updateStatus();
           }
-          showToast(\`Query complete: \${data.results?.length || 0} results, \${Math.round((data.coverageScore || 0) * 100)}% coverage\`, 'success');
+          showToast('Query complete: ' + (data.results?.length || 0) + ' results, ' + Math.round((data.coverageScore || 0) * 100) + '% coverage', 'success');
         } else {
           showToast('Query failed: ' + (data.error || 'Unknown error'), 'error');
         }
       } catch (e) { hideSpinner(); showToast('Query error: ' + e.message, 'error'); }
+    }
+
+    async function runQueryFromPicker(cardId) {
+      const card = cards.find(c => c.id === cardId);
+      if (!card) return;
+      const input = document.getElementById('kv-query-input-' + cardId);
+      const queryText = input ? input.value.trim() : '';
+      if (!queryText) { showToast('Enter a query', 'warning'); return; }
+      const picker = document.querySelector('[data-kv-picker="' + cardId + '"]');
+      const selectedEntries = [];
+      if (picker) {
+        picker.querySelectorAll('.kv-check:checked').forEach(cb => {
+          const ns = cb.dataset.ns;
+          const key = cb.dataset.key;
+          const id = cb.dataset.id;
+          const entry = card.kvPickerEntries?.find(e => e.id === id);
+          if (entry) selectedEntries.push(entry);
+        });
+      }
+      showSpinner('Querying...');
+      try {
+        const res = await fetch(API('/query'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: queryText, domains: card.domains || ['general'], scope: 'all', kvEntries: selectedEntries }),
+        });
+        const data = await res.json();
+        hideSpinner();
+        if (data.queryId) {
+          card.queryText = queryText;
+          card.content = queryText;
+          card.queryId = data.queryId;
+          card.results = data.results || [];
+          card.coverageScore = data.coverageScore || 0;
+          card.principlesApplied = data.principlesApplied || [];
+          card.kvSelectedEntries = selectedEntries;
+          card._pickerHtml = null;
+          card.title = '🔎 ' + queryText.slice(0, 50);
+          const el = document.getElementById('card-' + cardId);
+          if (el) { el.remove(); renderCard(card, card.x || 100, card.y || 100); }
+          showToast('Query complete: ' + (data.results?.length || 0) + ' results', 'success');
+        } else {
+          showToast('Query failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (e) {
+        hideSpinner();
+        showToast('Query error: ' + e.message, 'error');
+      }
     }
 
     function materializeQueryResult(queryCardId, resultIndex) {
@@ -2067,16 +2234,135 @@ var INDEX_HTML = `<!DOCTYPE html>
 
     // ── Truth-Audit ──
     function promptAudit() {
-      const selected = [...selectedIds];
-      if (selected.length === 0) {
-        if (cards.length === 0) { showToast('No cards to audit', 'warning'); return; }
-        if (!confirm('No cards selected. Audit ALL ' + cards.length + ' cards?')) return;
-        runAudit(cards.map(c => c.id), 'compliance');
+      promptAuditWithKVPicker();
+    }
+    async function promptAuditWithKVPicker() {
+      showSpinner('Loading KV entries...');
+      let entries = [];
+      try {
+        const res = await fetch(API('/kv/all'));
+        const data = await res.json();
+        entries = data.entries || [];
+      } catch (e) {
+        hideSpinner();
+        showToast('Failed to load KV entries: ' + e.message, 'error');
         return;
       }
-      const scope = prompt('Audit scope (compliance/full):', 'compliance') || 'compliance';
-      runAudit(selected, scope);
+      hideSpinner();
+      const cardId = 'card_' + crypto.randomUUID();
+      const grouped = {};
+      for (const e of entries) {
+        if (!grouped[e.ns]) grouped[e.ns] = [];
+        grouped[e.ns].push(e);
+      }
+      let listHtml = '';
+      for (const [ns, items] of Object.entries(grouped)) {
+        listHtml += '<div style="font-size:10px;font-weight:600;color:#888;padding:6px 8px 2px;text-transform:uppercase;border-top:1px solid #1a1a2e;">' + ns + ' (' + items.length + ')</div>';
+        for (const item of items) {
+          const preview = typeof item.value === 'object' ? JSON.stringify(item.value).slice(0, 80) : String(item.value).slice(0, 80);
+          listHtml += '<label class="kv-picker-item" data-kv-id="' + item.id + '">'
+            + '<input type="checkbox" class="kv-check" data-ns="' + item.ns + '" data-key="' + item.key + '" data-id="' + item.id + '">'
+            + '<span class="kv-ns kv-ns-' + item.ns + '">' + item.ns.replace('_KV','').replace('KV_','') + '</span>'
+            + '<div style="flex:1;min-width:0;"><div class="kv-key">' + escapeHtml(item.key) + '</div><div class="kv-preview">' + escapeHtml(preview) + '</div></div>'
+            + '</label>';
+        }
+      }
+      if (entries.length === 0) listHtml = '<div style="color:#666;font-size:11px;padding:12px;text-align:center;">No KV entries found.</div>';
+      const card = {
+        id: cardId,
+        type: 'Audit',
+        title: '🔍 New Audit — Select KV Sources',
+        content: '',
+        auditScope: 'compliance',
+        targetCardIds: [],
+        status: null,
+        overallConfidence: 0,
+        findings: [],
+        principleCoverage: null,
+        kvPickerEntries: entries,
+        splitView: false,
+      };
+      card._pickerHtml = '<div style="padding:4px 0;">'
+        + '<div style="font-size:10px;color:#888;margin-bottom:4px;">Select KV entries to audit against (' + entries.length + ' total)</div>'
+        + '<div class="kv-picker-controls">'
+        + '<button onclick="kvPickerSelectAll(\\'' + cardId + '\\')" class="ctrl-btn" style="font-size:10px;padding:2px 6px;">Select All</button>'
+        + '<button onclick="kvPickerSelectNone(\\'' + cardId + '\\')" class="ctrl-btn" style="font-size:10px;padding:2px 6px;">None</button>'
+        + '<span id="kv-picker-count-' + cardId + '" style="font-size:10px;color:#888;margin-left:auto;">0 selected</span>'
+        + '</div>'
+        + '<div class="kv-picker" data-kv-picker="' + cardId + '">' + listHtml + '</div>'
+        + '<div style="margin-top:8px;">'
+        + '<select id="kv-audit-scope-' + cardId + '" style="background:#0d0d1a;color:#e0e0e0;border:1px solid #2a2a4a;border-radius:4px;padding:4px 8px;font-size:11px;width:100%;">'
+        + '<option value="compliance">Compliance Audit</option>'
+        + '<option value="full">Full Audit</option>'
+        + '</select>'
+        + '</div>'
+        + '<div style="margin-top:6px;display:flex;gap:6px;">'
+        + '<button onclick="runAuditFromPicker(\\'' + cardId + '\\')" class="ctrl-btn" style="flex:1;font-size:11px;padding:4px 8px;border-color:#ff4a6a;color:#ff4a6a;">Run Audit</button>'
+        + '</div>'
+        + '</div>';
+      cards.push(card);
+      renderCard(card, cardCounter * 30 + 40, cardCounter * 30 + 40);
+      cardCounter++;
+      updateStatus();
+      const pickerEl = document.querySelector('[data-kv-picker="' + cardId + '"]');
+      if (pickerEl) {
+        pickerEl.addEventListener('change', (e) => {
+          if (e.target.classList.contains('kv-check')) {
+            e.target.closest('.kv-picker-item')?.classList.toggle('selected', e.target.checked);
+          }
+          const count = pickerEl.querySelectorAll('.kv-check:checked').length;
+          const countEl = document.getElementById('kv-picker-count-' + cardId);
+          if (countEl) countEl.textContent = count + ' selected';
+        });
+      }
     }
+
+    async function runAuditFromPicker(cardId) {
+      const card = cards.find(c => c.id === cardId);
+      if (!card) return;
+      const scopeEl = document.getElementById('kv-audit-scope-' + cardId);
+      const auditScope = scopeEl ? scopeEl.value : 'compliance';
+      const picker = document.querySelector('[data-kv-picker="' + cardId + '"]');
+      const selectedEntries = [];
+      if (picker) {
+        picker.querySelectorAll('.kv-check:checked').forEach(cb => {
+          const id = cb.dataset.id;
+          const entry = card.kvPickerEntries?.find(e => e.id === id);
+          if (entry) selectedEntries.push(entry);
+        });
+      }
+      if (selectedEntries.length === 0) { showToast('Select at least one KV entry', 'warning'); return; }
+      showSpinner('Auditing...');
+      try {
+        const res = await fetch(API('/audit'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cardIds: [], auditScope, includeSnapshots: true, kvEntries: selectedEntries }),
+        });
+        const data = await res.json();
+        hideSpinner();
+        if (data.auditId) {
+          card.auditId = data.auditId;
+          card.auditScope = auditScope;
+          card.status = data.status || 'fail';
+          card.overallConfidence = data.overallConfidence || 0;
+          card.findings = data.findings || [];
+          card.principleCoverage = data.principleCoverage || null;
+          card.kvSelectedEntries = selectedEntries;
+          card._pickerHtml = null;
+          card.title = '🔍 Audit — ' + auditScope + ' (' + selectedEntries.length + ' KV entries)';
+          const el = document.getElementById('card-' + cardId);
+          if (el) { el.remove(); renderCard(card, card.x || 100, card.y || 100); }
+          showToast('Audit complete: ' + card.status + ' (' + Math.round((card.overallConfidence || 0) * 100) + '%)', card.status === 'pass' ? 'success' : card.status === 'conditional' ? 'warning' : 'error');
+        } else {
+          showToast('Audit failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (e) {
+        hideSpinner();
+        showToast('Audit error: ' + e.message, 'error');
+      }
+    }
+
     async function runAudit(cardIds, auditScope) {
       showSpinner('Auditing...');
       try {
@@ -2133,7 +2419,7 @@ var INDEX_HTML = `<!DOCTYPE html>
       const icon = filterType === 'Query' ? '🔎' : filterType === 'Audit' ? '🔍' : '⚙';
       let listHtml = '';
       if (filtered.length === 0) {
-        listHtml = '<div style="color:#666;font-size:12px;padding:16px;text-align:center;">No ' + typeLabel + ' found. Run a ' + (filterType === 'eitl' ? 'review' : filterType.toLowerCase()) + ' to populate this list.</div>';
+        listHtml = '<div style="color:#666;font-size:12px;padding:16px;text-align:center;">No ' + typeLabel + ' found. Click the button below to create one.</div>';
       } else {
         listHtml = filtered.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).map(c => {
           const date = c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '';
@@ -2146,10 +2432,15 @@ var INDEX_HTML = `<!DOCTYPE html>
             + '</div>';
         }).join('');
       }
+      const newBtn = filterType === 'Query' ? '<button onclick="promptQuery()" class="ctrl-btn" style="font-size:10px;padding:2px 8px;border-color:#4a9fff;color:#4a9fff;">+ New Query</button>'
+        : filterType === 'Audit' ? '<button onclick="promptAudit()" class="ctrl-btn" style="font-size:10px;padding:2px 8px;border-color:#ff4a6a;color:#ff4a6a;">+ New Audit</button>' : '';
       const cardHtml = '<div style="padding:12px;max-height:400px;overflow-y:auto;">'
         + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
         + '<span style="font-size:11px;color:#888;">' + filtered.length + ' items</span>'
+        + '<div style="display:flex;gap:6px;">'
+        + newBtn
         + '<button onclick="syncFromKV()" class="ctrl-btn" style="font-size:10px;padding:2px 8px;">Sync</button>'
+        + '</div>'
         + '</div>'
         + listHtml + '</div>';
       const card = {
@@ -3396,6 +3687,34 @@ ${principleList}` },
       return json({ synced, cards: newCards });
     }
     // ── EITL Elevate: revise content, bump confidence, write to master truths ──
+    if (url.pathname === "/api/kv/all" && request.method === "GET") {
+      const entries = [];
+      const kvBindings = [
+        { name: "KV_NAMESPACES", kv: this.env.KV_NAMESPACES },
+        { name: "ORP_KV", kv: this.env.ORP_KV },
+        { name: "AUDITS_KV", kv: this.env.AUDITS_KV },
+        { name: "CONTEXT_KV", kv: this.env.CONTEXT_KV }
+      ];
+      for (const binding of kvBindings) {
+        if (!binding.kv) continue;
+        try {
+          const list = await binding.kv.list({ limit: 100 });
+          for (const key of list.keys) {
+            const val = await binding.kv.get(key.name, { type: "json" });
+            entries.push({
+              id: binding.name + ":" + key.name,
+              ns: binding.name,
+              key: key.name,
+              value: val,
+              type: typeof val === "object" && val !== null ? (Array.isArray(val) ? "array" : "object") : typeof val
+            });
+          }
+        } catch (e) {
+          console.error("KV list error for " + binding.name + ":", e.message);
+        }
+      }
+      return json({ entries });
+    }
     if (url.pathname === "/api/elevate" && request.method === "POST") {
       await this.ensureLoaded();
       const { cardId, revisedContent, confidence, title } = await request.json();
