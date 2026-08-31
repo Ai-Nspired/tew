@@ -11,6 +11,12 @@
       }
     ]
   },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["Workspace"]
+    }
+  ],
   "kv_namespaces": [
     {
       "binding": "KV_NAMESPACES",
@@ -36,6 +42,12 @@
     {
       "binding": "R2",
       "bucket_name": "truth-engine-assets"
+    }
+  ],
+  "services": [
+    {
+      "binding": "ORPROXY",
+      "service": "orproxy"
     }
   ]
 }
