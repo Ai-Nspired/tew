@@ -1,0 +1,41 @@
+{
+  "name": "tew",
+  "main": "worker.js",
+  "compatibility_date": "2026-08-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WORKSPACE",
+        "class_name": "Workspace"
+      }
+    ]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "KV_NAMESPACES",
+      "id": "c09c7cc291e04061831f8d3d3ba4625a"
+    },
+    {
+      "binding": "ORP_KV",
+      "id": "145a30ed3f974dab983eb37d2a5a5a8f"
+    },
+    {
+      "binding": "AUDITS_KV",
+      "id": "8c19918f71fd420d8115e022d3014b9f"
+    },
+    {
+      "binding": "CONTEXT_KV",
+      "id": "b78a25e9928e44b3ab0a3e9647a2ee33"
+    }
+  ],
+  "ai": {
+    "binding": "AI"
+  },
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "truth-engine-assets"
+    }
+  ]
+}
