@@ -53,6 +53,15 @@
     .query-result .result-snippet { color: #aaa; margin-top: 2px; }
     .query-result .result-relevance { font-size: 10px; color: #4aff8a; float: right; }
     .kv-picker { max-height: 300px; overflow-y: auto; border: 1px solid #2a2a4a; border-radius: 6px; background: #0d0d1a; }
+    .kv-picker-search { width: 100%; background: #0d0d1a; color: #e0e0e0; border: 1px solid #2a2a4a; border-radius: 4px; padding: 4px 8px; font-size: 11px; margin-bottom: 6px; }
+    .kv-picker-search:focus { outline: none; border-color: #ff6b1a; }
+    .kv-picker-group { border-top: 1px solid #1a1a2e; }
+    .kv-picker-group-header { display: flex; align-items: center; gap: 6px; padding: 6px 8px; cursor: pointer; font-size: 10px; font-weight: 600; color: #888; text-transform: uppercase; user-select: none; }
+    .kv-picker-group-header:hover { background: #1a1a2e; }
+    .kv-picker-group-header .arrow { transition: transform 0.15s; }
+    .kv-picker-group-header.collapsed .arrow { transform: rotate(-90deg); }
+    .kv-picker-group-items { display: none; }
+    .kv-picker-group-header:not(.collapsed) + .kv-picker-group-items { display: block; }
     .kv-picker-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #1a1a2e; cursor: pointer; font-size: 11px; transition: background 0.1s; }
     .kv-picker-item:last-child { border-bottom: none; }
     .kv-picker-item:hover { background: #1a1a2e; }
@@ -192,8 +201,8 @@
       <button class="ctrl-btn" onclick="createCard('Import')">📎 Import</button>
       <button class="ctrl-btn" onclick="createCard('Search')">🔍 Search</button>
       <span class="sep" style="width:1px;height:20px;background:#2a2a4a;margin:0 4px;"></span>
-      <button class="ctrl-btn" onclick="openTabList('Query')" style="border-color:#1a2a4a;color:#4a9fff;">🔎 Queries</button>
-      <button class="ctrl-btn" onclick="openTabList('Audit')" style="border-color:#4a1a2a;color:#ff4a6a;">🔍 Audits</button>
+      <button class="ctrl-btn" onclick="promptQuery()" style="border-color:#1a2a4a;color:#4a9fff;">🔎 Query</button>
+      <button class="ctrl-btn" onclick="promptAudit()" style="border-color:#4a1a2a;color:#ff4a6a;">🔍 Audit</button>
       <button class="ctrl-btn" onclick="openTabList('eitl')" style="border-color:#2a1a4a;color:#c84aff;">⚙ EITL</button>
       <button class="ctrl-btn" onclick="promptDomain()" style="border-color:#2a2a1a;color:#c8c84a;">🌍 Domain</button>
     </div>
@@ -1809,19 +1818,24 @@
         if (!grouped[e.ns]) grouped[e.ns] = [];
         grouped[e.ns].push(e);
       }
-      let listHtml = '';
+      let listHtml = '<input class="kv-picker-search" type="text" placeholder="Filter entries..." data-kv-search="' + cardId + '" />';
       for (const [ns, items] of Object.entries(grouped)) {
-        listHtml += '<div style="font-size:10px;font-weight:600;color:#888;padding:6px 8px 2px;text-transform:uppercase;border-top:1px solid #1a1a2e;">' + ns + ' (' + items.length + ')</div>';
+        const nsShort = ns.replace('_KV','').replace('KV_','');
+        listHtml += '<div class="kv-picker-group" data-kv-group="' + ns + '" data-kv-group-card="' + cardId + '">'
+          + '<div class="kv-picker-group-header collapsed" onclick="this.classList.toggle(\'collapsed\')">'
+          + '<span class="arrow">▼</span> ' + nsShort + ' <span style="color:#666;font-weight:400;">(' + items.length + ')</span>'
+          + '</div>'
+          + '<div class="kv-picker-group-items">';
         for (const item of items) {
           const preview = typeof item.value === 'object' ? JSON.stringify(item.value).slice(0, 80) : String(item.value).slice(0, 80);
-          listHtml += '<label class="kv-picker-item" data-kv-id="' + item.id + '">'
+          listHtml += '<label class="kv-picker-item" data-kv-id="' + item.id + '" data-kv-group-card="' + cardId + '">'
             + '<input type="checkbox" class="kv-check" data-ns="' + item.ns + '" data-key="' + item.key + '" data-id="' + item.id + '">'
-            + '<span class="kv-ns kv-ns-' + item.ns + '">' + item.ns.replace('_KV','').replace('KV_','') + '</span>'
             + '<div style="flex:1;min-width:0;"><div class="kv-key">' + escapeHtml(item.key) + '</div><div class="kv-preview">' + escapeHtml(preview) + '</div></div>'
             + '</label>';
         }
+        listHtml += '</div></div>';
       }
-      if (entries.length === 0) listHtml = '<div style="color:#666;font-size:11px;padding:12px;text-align:center;">No KV entries found.</div>';
+      if (entries.length === 0) listHtml += '<div style="color:#666;font-size:11px;padding:12px;text-align:center;">No KV entries found.</div>';
       const card = {
         id: cardId,
         type: 'Query',
@@ -1864,14 +1878,37 @@
           const countEl = document.getElementById('kv-picker-count-' + cardId);
           if (countEl) countEl.textContent = count + ' selected';
         });
+        const searchEl = pickerEl.querySelector('[data-kv-search="' + cardId + '"]');
+        if (searchEl) {
+          searchEl.addEventListener('input', (e) => {
+            const q = e.target.value.toLowerCase();
+            pickerEl.querySelectorAll('.kv-picker-item').forEach(item => {
+              const key = item.querySelector('.kv-key')?.textContent?.toLowerCase() || '';
+              const preview = item.querySelector('.kv-preview')?.textContent?.toLowerCase() || '';
+              item.style.display = (!q || key.includes(q) || preview.includes(q)) ? '' : 'none';
+            });
+            pickerEl.querySelectorAll('.kv-picker-group').forEach(group => {
+              const visible = group.querySelectorAll('.kv-picker-item:not([style*="display: none"])').length;
+              group.style.display = visible > 0 ? '' : 'none';
+              if (q && visible > 0) {
+                const header = group.querySelector('.kv-picker-group-header');
+                if (header) header.classList.remove('collapsed');
+              }
+            });
+          });
+        }
       }
     }
 
     function kvPickerSelectAll(cardId) {
       const picker = document.querySelector('[data-kv-picker="' + cardId + '"]');
       if (!picker) return;
-      picker.querySelectorAll('.kv-check').forEach(cb => { cb.checked = true; });
-      picker.querySelectorAll('.kv-picker-item').forEach(item => { item.classList.add('selected'); });
+      picker.querySelectorAll('.kv-picker-item').forEach(item => {
+        if (item.style.display !== 'none') {
+          const cb = item.querySelector('.kv-check');
+          if (cb) { cb.checked = true; item.classList.add('selected'); }
+        }
+      });
       const count = picker.querySelectorAll('.kv-check:checked').length;
       const countEl = document.getElementById('kv-picker-count-' + cardId);
       if (countEl) countEl.textContent = count + ' selected';
@@ -2000,19 +2037,24 @@
         if (!grouped[e.ns]) grouped[e.ns] = [];
         grouped[e.ns].push(e);
       }
-      let listHtml = '';
+      let listHtml = '<input class="kv-picker-search" type="text" placeholder="Filter entries..." data-kv-search="' + cardId + '" />';
       for (const [ns, items] of Object.entries(grouped)) {
-        listHtml += '<div style="font-size:10px;font-weight:600;color:#888;padding:6px 8px 2px;text-transform:uppercase;border-top:1px solid #1a1a2e;">' + ns + ' (' + items.length + ')</div>';
+        const nsShort = ns.replace('_KV','').replace('KV_','');
+        listHtml += '<div class="kv-picker-group" data-kv-group="' + ns + '" data-kv-group-card="' + cardId + '">'
+          + '<div class="kv-picker-group-header collapsed" onclick="this.classList.toggle(\'collapsed\')">'
+          + '<span class="arrow">▼</span> ' + nsShort + ' <span style="color:#666;font-weight:400;">(' + items.length + ')</span>'
+          + '</div>'
+          + '<div class="kv-picker-group-items">';
         for (const item of items) {
           const preview = typeof item.value === 'object' ? JSON.stringify(item.value).slice(0, 80) : String(item.value).slice(0, 80);
-          listHtml += '<label class="kv-picker-item" data-kv-id="' + item.id + '">'
+          listHtml += '<label class="kv-picker-item" data-kv-id="' + item.id + '" data-kv-group-card="' + cardId + '">'
             + '<input type="checkbox" class="kv-check" data-ns="' + item.ns + '" data-key="' + item.key + '" data-id="' + item.id + '">'
-            + '<span class="kv-ns kv-ns-' + item.ns + '">' + item.ns.replace('_KV','').replace('KV_','') + '</span>'
             + '<div style="flex:1;min-width:0;"><div class="kv-key">' + escapeHtml(item.key) + '</div><div class="kv-preview">' + escapeHtml(preview) + '</div></div>'
             + '</label>';
         }
+        listHtml += '</div></div>';
       }
-      if (entries.length === 0) listHtml = '<div style="color:#666;font-size:11px;padding:12px;text-align:center;">No KV entries found.</div>';
+      if (entries.length === 0) listHtml += '<div style="color:#666;font-size:11px;padding:12px;text-align:center;">No KV entries found.</div>';
       const card = {
         id: cardId,
         type: 'Audit',
@@ -2059,6 +2101,25 @@
           const countEl = document.getElementById('kv-picker-count-' + cardId);
           if (countEl) countEl.textContent = count + ' selected';
         });
+        const searchEl = pickerEl.querySelector('[data-kv-search="' + cardId + '"]');
+        if (searchEl) {
+          searchEl.addEventListener('input', (e) => {
+            const q = e.target.value.toLowerCase();
+            pickerEl.querySelectorAll('.kv-picker-item').forEach(item => {
+              const key = item.querySelector('.kv-key')?.textContent?.toLowerCase() || '';
+              const preview = item.querySelector('.kv-preview')?.textContent?.toLowerCase() || '';
+              item.style.display = (!q || key.includes(q) || preview.includes(q)) ? '' : 'none';
+            });
+            pickerEl.querySelectorAll('.kv-picker-group').forEach(group => {
+              const visible = group.querySelectorAll('.kv-picker-item:not([style*="display: none"])').length;
+              group.style.display = visible > 0 ? '' : 'none';
+              if (q && visible > 0) {
+                const header = group.querySelector('.kv-picker-group-header');
+                if (header) header.classList.remove('collapsed');
+              }
+            });
+          });
+        }
       }
     }
 
