@@ -1822,11 +1822,12 @@
       let listHtml = '<input class="kv-picker-search" type="text" placeholder="Filter entries..." data-kv-search="' + cardId + '" />';
       for (const [ns, items] of Object.entries(grouped)) {
         const nsShort = ns.replace('_KV','').replace('KV_','');
+        const grpId = cardId + '_' + ns;
         listHtml += '<div class="kv-picker-group" data-kv-group="' + ns + '" data-kv-group-card="' + cardId + '">'
-          + '<div class="kv-picker-group-header collapsed" onclick="this.classList.toggle(\'collapsed\')">'
-          + '<span class="arrow">▼</span> ' + nsShort + ' <span style="color:#666;font-weight:400;">(' + items.length + ')</span>'
+          + '<div class="kv-picker-group-header" style="cursor:pointer;" onclick="const el=document.getElementById(\'gitems-' + grpId + '\');const arrow=document.getElementById(\'garrow-' + grpId + '\');if(el.style.display===\'none\'){el.style.display=\'block\';arrow.style.transform=\'rotate(0deg)\';}else{el.style.display=\'none\';arrow.style.transform=\'rotate(-90deg)\';}">'
+          + '<span id="garrow-' + grpId + '" class="arrow" style="display:inline-block;transform:rotate(-90deg);transition:transform 0.15s;">▼</span> ' + nsShort + ' <span style="color:#666;font-weight:400;">(' + items.length + ')</span>'
           + '</div>'
-          + '<div class="kv-picker-group-items">';
+          + '<div id="gitems-' + grpId + '" class="kv-picker-group-items" style="display:none;">';
         for (const item of items) {
           const preview = typeof item.value === 'object' ? JSON.stringify(item.value).slice(0, 80) : String(item.value).slice(0, 80);
           listHtml += '<label class="kv-picker-item" data-kv-id="' + item.id + '" data-kv-group-card="' + cardId + '">'
@@ -2041,11 +2042,12 @@
       let listHtml = '<input class="kv-picker-search" type="text" placeholder="Filter entries..." data-kv-search="' + cardId + '" />';
       for (const [ns, items] of Object.entries(grouped)) {
         const nsShort = ns.replace('_KV','').replace('KV_','');
+        const grpId = cardId + '_' + ns;
         listHtml += '<div class="kv-picker-group" data-kv-group="' + ns + '" data-kv-group-card="' + cardId + '">'
-          + '<div class="kv-picker-group-header collapsed" onclick="this.classList.toggle(\'collapsed\')">'
-          + '<span class="arrow">▼</span> ' + nsShort + ' <span style="color:#666;font-weight:400;">(' + items.length + ')</span>'
+          + '<div class="kv-picker-group-header" style="cursor:pointer;" onclick="const el=document.getElementById(\'gitems-' + grpId + '\');const arrow=document.getElementById(\'garrow-' + grpId + '\');if(el.style.display===\'none\'){el.style.display=\'block\';arrow.style.transform=\'rotate(0deg)\';}else{el.style.display=\'none\';arrow.style.transform=\'rotate(-90deg)\';}">'
+          + '<span id="garrow-' + grpId + '" class="arrow" style="display:inline-block;transform:rotate(-90deg);transition:transform 0.15s;">▼</span> ' + nsShort + ' <span style="color:#666;font-weight:400;">(' + items.length + ')</span>'
           + '</div>'
-          + '<div class="kv-picker-group-items">';
+          + '<div id="gitems-' + grpId + '" class="kv-picker-group-items" style="display:none;">';
         for (const item of items) {
           const preview = typeof item.value === 'object' ? JSON.stringify(item.value).slice(0, 80) : String(item.value).slice(0, 80);
           listHtml += '<label class="kv-picker-item" data-kv-id="' + item.id + '" data-kv-group-card="' + cardId + '">'
