@@ -208,11 +208,12 @@ var TASK_BACKEND = {
   generate: "openrouter"
 };
 var LLMRouter = class {
-  constructor(cfAI, openrouterKey, openrouterBaseUrl = "https://openrouter.ai/api/v1", nsm = null) {
+  constructor(cfAI, openrouterKey, openrouterBaseUrl = "https://openrouter.ai/api/v1", nsm = null, orproxy = null) {
     this.cfAI = cfAI;
     this.openrouterKey = openrouterKey;
     this.openrouterBaseUrl = openrouterBaseUrl;
     this.nsm = nsm;
+    this.orproxy = orproxy;
   }
   async callCfAI(messages, options = {}) {
     const response = await this.cfAI.run(CF_AI_MODEL, {
@@ -224,21 +225,46 @@ var LLMRouter = class {
     return response?.response || "";
   }
   async callOpenRouter(messages, options = {}) {
-    const response = await fetch(`${this.openrouterBaseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${this.openrouterKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: OPENROUTER_MODEL,
-        messages,
-        max_tokens: options.maxTokens || 4096,
-        temperature: options.temperature ?? 0.3
-      })
+    const body = JSON.stringify({
+      model: OPENROUTER_MODEL,
+      messages,
+      max_tokens: options.maxTokens || 4096,
+      temperature: options.temperature ?? 0.3,
+      stream: false
     });
+    let response;
+    if (this.orproxy && typeof this.orproxy.fetch === "function") {
+      response = await this.orproxy.fetch("https://orproxy/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body
+      });
+    } else if (this.openrouterKey) {
+      response = await fetch(`${this.openrouterBaseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.openrouterKey}`,
+          "Content-Type": "application/json"
+        },
+        body
+      });
+    } else {
+      throw new Error("No OpenRouter route configured (ORPROXY binding and OPENROUTER_API_KEY are both missing)");
+    }
+    if (!response.ok) {
+      let detail = "";
+      try {
+        detail = (await response.text()).slice(0, 300);
+      } catch {
+      }
+      throw new Error(`OpenRouter upstream ${response.status}${detail ? ": " + detail : ""}`);
+    }
     const data = await response.json();
-    return data?.choices?.[0]?.message?.content || "";
+    const content = data?.choices?.[0]?.message?.content;
+    if (typeof content !== "string" || !content.trim()) {
+      throw new Error("OpenRouter returned no completion content");
+    }
+    return content;
   }
   async call(task, messages, options = {}) {
     let nsmMeta = null;
@@ -1946,17 +1972,18 @@ var INDEX_HTML = `<!DOCTYPE html>
         const results = await res.json();
         const container = document.getElementById('searchResults'); container.style.display = 'block';
         container.innerHTML = (results.hits || []).map(r => \`
-          <div class="search-result-item" onclick="materializeSearchResult('\${escapeHtml(r.title)}', '\${escapeHtml(r.snippet || '')}')">
+          <div class="search-result-item" onclick="materializeSearchResult('\${escapeHtml(r.title)}', '\${escapeHtml(r.snippet || '')}', '\${escapeHtml(r.url || '')}')">
             <div class="result-title">\${escapeHtml(r.title)}</div>
             <div class="result-snippet">\${escapeHtml((r.snippet || '').slice(0, 120))}</div>
+            \${r.url ? '<div class="result-snippet" style="color:#4a9aff;font-size:10px;">' + escapeHtml(r.url) + '</div>' : ''}
           </div>
         \`).join('') || '<div class="text-xs text-gray-500 p-2">No results</div>';
       } catch(e) { showToast('Search failed: ' + e.message, 'error'); }
       finally { btn.disabled = false; btn.textContent = 'Search'; }
     }
-    function materializeSearchResult(title, snippet) {
+    function materializeSearchResult(title, snippet, url) {
       closeSearch();
-      createCard('Document', title, snippet);
+      createCard({ type: 'Document', title, content: snippet + (url ? ' — source: ' + url : ''), url: url || undefined });
     }
     async function runCardSearch(cardId) {
       const el = document.getElementById(\`card-\${cardId}\`);
@@ -1968,9 +1995,10 @@ var INDEX_HTML = `<!DOCTYPE html>
         const res = await fetch(API('/search'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q }) });
         const data = await res.json();
         results.innerHTML = (data.hits || []).map(r => \`
-          <div class="search-result-item" onclick="materializeSearchResult('\${escapeHtml(r.title)}', '\${escapeHtml(r.snippet || '')}')">
+          <div class="search-result-item" onclick="materializeSearchResult('\${escapeHtml(r.title)}', '\${escapeHtml(r.snippet || '')}', '\${escapeHtml(r.url || '')}')">
             <div class="result-title">\${escapeHtml(r.title)}</div>
             <div class="result-snippet">\${escapeHtml((r.snippet || '').slice(0, 120))}</div>
+            \${r.url ? '<div class="result-snippet" style="color:#4a9aff;font-size:10px;">' + escapeHtml(r.url) + '</div>' : ''}
           </div>
         \`).join('') || '<div class="text-xs text-gray-500 p-2">No results</div>';
       } catch(e) { results.innerHTML = '<div class="text-xs text-red-400 p-2">Search failed</div>'; }
@@ -2862,21 +2890,13 @@ var INDEX_HTML = `<!DOCTYPE html>
 
     // ── NSM Panel ──
     async function openNSM() {
-      const cardCounter = cards.length;
-      const cardId = 'nsm_' + Date.now();
-      const card = {
-        id: cardId,
-        type: 'Document',
-        title: '🧠 NSM Domains',
-        content: 'Loading NSM domains...',
-        x: cardCounter * 30 + 40,
-        y: cardCounter * 30 + 40,
-        width: 520,
-        height: 420,
-      };
-      cards.push(card);
-      renderCard(card, card.x, card.y);
-      cardCounter++;
+      const existing = cards.find(c => c.title === '🧠 NSM Domains');
+      const card = existing || await createCard({ type: 'Document', title: '🧠 NSM Domains', content: '<div style="color:#666;text-align:center;padding:20px;">Loading NSM domains...</div>', rawHtml: true, width: 520, height: 420 });
+      const cardId = card.id;
+      if (existing) {
+        const host = document.querySelector('[data-rawcontent="' + cardId + '"]');
+        if (host) host.innerHTML = '<div style="color:#666;text-align:center;padding:20px;">Refreshing...</div>';
+      }
       updateStatus();
       try {
         const res = await fetch('/api/nsm/domains');
@@ -2916,22 +2936,18 @@ var INDEX_HTML = `<!DOCTYPE html>
         html += '<button class="ctrl-btn" onclick="nsmRefresh()" style="font-size:10px;padding:3px 8px;border-color:#4affa0;color:#4affa0;">Refresh</button>';
         html += '<button class="ctrl-btn" onclick="nsmAcquireDomain()" style="font-size:10px;padding:3px 8px;border-color:#c8c84a;color:#c8c84a;">+ Acquire Domain</button>';
         html += '</div>';
-        const el = document.querySelector('[data-card-id="' + cardId + '"] .card-body');
+        const el = document.querySelector('[data-rawcontent="' + cardId + '"]');
         if (el) el.innerHTML = html;
+        card.content = html;
+        await updateCard(cardId, { content: html, rawHtml: true });
       } catch (e) {
-        const el = document.querySelector('[data-card-id="' + cardId + '"] .card-body');
+        const el = document.querySelector('[data-rawcontent="' + cardId + '"]');
         if (el) el.innerHTML = '<div style="color:#ff4a6a;">Failed to load NSM: ' + e.message + '</div>';
       }
     }
 
     async function nsmRefresh() {
-      const nsmCards = cards.filter(c => c.title === '🧠 NSM Domains');
-      if (nsmCards.length > 0) {
-        const cardId = nsmCards[nsmCards.length - 1].id;
-        const el = document.querySelector('[data-card-id="' + cardId + '"] .card-body');
-        if (el) el.innerHTML = '<div style="color:#666;text-align:center;padding:20px;">Refreshing...</div>';
-        openNSM();
-      }
+      return openNSM();
     }
 
     async function nsmAcquireDomain() {
@@ -2963,13 +2979,43 @@ var INDEX_HTML = `<!DOCTYPE html>
 var server_default = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (request.method === "OPTIONS") {
+      return new Response(null, { headers: cors() });
+    }
+    if (url.pathname === "/health" || url.pathname === "/api/health") {
+      const orproxyReady = !!(env.ORPROXY && typeof env.ORPROXY.fetch === "function");
+      return json({
+        status: "ok",
+        worker: "tew",
+        version: env.VERSION || "dev",
+        time: (/* @__PURE__ */ new Date()).toISOString(),
+        bindings: {
+          ai: !!env.AI,
+          workspace: !!env.WORKSPACE,
+          orproxy: orproxyReady,
+          r2: !!env.R2,
+          kv: {
+            context: !!env.CONTEXT_KV,
+            namespaces: !!env.KV_NAMESPACES,
+            orp: !!env.ORP_KV,
+            audits: !!env.AUDITS_KV
+          }
+        },
+        features: {
+          cards: true,
+          principles: true,
+          nsm: !!memoryKv(env),
+          import: !!env.AI,
+          domainAssets: !!env.R2,
+          deepInstruct: orproxyReady || !!env.OPENROUTER_API_KEY,
+          stream: false
+        }
+      });
+    }
     if (!url.pathname.startsWith("/api/")) {
       return new Response(INDEX_HTML, {
         headers: { "Content-Type": "text/html;charset=UTF-8", ...cors() }
       });
-    }
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: cors() });
     }
     try {
       const workspaceId = url.searchParams.get("ws") || "default";
@@ -3128,6 +3174,110 @@ var DomainManager = class {
     }
   }
 };
+function memoryKv(env) {
+  if (!env) return null;
+  return env.CONTEXT_KV || env.KV_NAMESPACES || env.ORP_KV || env.AUDITS_KV || env.KV || null;
+}
+
+var SEARX_DEFAULT = "https://searing-render.fly.dev";
+var SEARX_TIMEOUT_DEFAULT = 6e4;
+var SEARX_HEDGE_DEFAULT = 4e3;
+var SEARX_FALLBACK_TIMEOUT_DEFAULT = 15e3;
+function searxBase(env) {
+  return env && env.SEARX_URL ? String(env.SEARX_URL).replace(/\/+$/, "") : SEARX_DEFAULT;
+}
+function searxFallback(env) {
+  const url = env && env.SEARX_FALLBACK_URL ? String(env.SEARX_FALLBACK_URL).replace(/\/+$/, "") : "";
+  return url && url !== searxBase(env) ? url : "";
+}
+function searxNumber(env, key, fallback) {
+  const n = Number(env && env[key]);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+function searxTimeout(env) {
+  return searxNumber(env, "SEARX_TIMEOUT_MS", SEARX_TIMEOUT_DEFAULT);
+}
+function searxHedgeMs(env) {
+  return searxNumber(env, "SEARX_HEDGE_MS", SEARX_HEDGE_DEFAULT);
+}
+function searxFallbackTimeout(env) {
+  return searxNumber(env, "SEARX_FALLBACK_TIMEOUT_MS", SEARX_FALLBACK_TIMEOUT_DEFAULT);
+}
+async function searxQuery(base, query, timeoutMs) {
+  const endpoint = base + "/search?q=" + encodeURIComponent(query) + "&format=json&safesearch=0";
+  const response = await fetch(endpoint, {
+    headers: {
+      "Accept": "application/json",
+      "User-Agent": "tew-worker/1.0 (+SearXNG client)"
+    },
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  if (!response.ok) throw new Error("returned " + response.status);
+  const data = await response.json().catch(() => null);
+  const results = Array.isArray(data?.results) ? data.results : [];
+  return results.slice(0, 15).map((r, i) => ({
+    id: "web_" + i,
+    title: r.title || r.url || "Untitled",
+    url: r.url || "",
+    snippet: (r.content || "").slice(0, 300),
+    type: "web",
+    engine: r.engine || r.engines || null
+  }));
+}
+function searxDescribe(failure) {
+  if (failure.error && failure.error.name === "TimeoutError") {
+    return failure.backend + " timed out after " + Math.round(failure.timeoutMs / 1e3) + "s";
+  }
+  return failure.backend + " " + (failure.error && failure.error.message ? failure.error.message : "failed");
+}
+function searxFirstSuccess(runs) {
+  return new Promise((resolve, reject) => {
+    const failures = [];
+    let pending = runs.length;
+    for (const run of runs) {
+      run.then((outcome) => {
+        if (outcome.ok) {
+          resolve(outcome);
+          return;
+        }
+        failures.push(outcome);
+        if (--pending === 0) reject(failures);
+      });
+    }
+  });
+}
+async function searxSearch(env, query) {
+  const attempt = (base, timeoutMs) => searxQuery(base, query, timeoutMs).then(
+    (hits) => ({ ok: true, hits, backend: base }),
+    (error) => ({ ok: false, error, backend: base, timeoutMs })
+  );
+  const primary = searxBase(env);
+  const primaryRun = attempt(primary, searxTimeout(env));
+  const fallback = searxFallback(env);
+  if (!fallback) {
+    const only = await primaryRun;
+    if (only.ok) return { hits: only.hits, backend: only.backend };
+    const error = new Error(searxDescribe(only));
+    error.timeout = !!only.error && only.error.name === "TimeoutError";
+    throw error;
+  }
+  const hedge = await Promise.race([
+    primaryRun,
+    new Promise((resolve) => setTimeout(() => resolve({ hedged: true }), searxHedgeMs(env)))
+  ]);
+  if (hedge.ok) return { hits: hedge.hits, backend: hedge.backend };
+  const runs = [attempt(fallback, searxFallbackTimeout(env))];
+  if (hedge.hedged) runs.push(primaryRun);
+  try {
+    const winner = await searxFirstSuccess(runs);
+    return { hits: winner.hits, backend: winner.backend };
+  } catch (failures) {
+    const all = hedge.hedged ? failures : [hedge, ...failures];
+    const error = new Error(all.map(searxDescribe).join("; "));
+    error.timeout = all.every((f) => f.error && f.error.name === "TimeoutError");
+    throw error;
+  }
+}
 var Workspace = class extends DurableObject {
   cards = null;
   principles = null;
@@ -3158,7 +3308,8 @@ var Workspace = class extends DurableObject {
         this.env.AI,
         this.env.OPENROUTER_API_KEY || "",
         this.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
-        this.getNSM()
+        this.getNSM(),
+        this.env.ORPROXY || null
       );
     }
     return this.llm;
@@ -3171,7 +3322,7 @@ var Workspace = class extends DurableObject {
   }
   getDomainManager(domain) {
     if (!this.env) return null;
-    return new DomainManager(this.env.KV, this.env.R2, domain);
+    return new DomainManager(memoryKv(this.env), this.env.R2, domain);
   }
   broadcast(message) {
     const data = JSON.stringify(message);
@@ -3350,7 +3501,7 @@ var Workspace = class extends DurableObject {
       }
     }
     if (url.pathname === "/api/import" && request.method === "POST") {
-      const { filename, mimeType, data } = await request.json();
+      const { filename, mimeType, data, domain } = await request.json();
       if (!data) return json({ error: "No file data" }, 400);
       const binaryStr = atob(data);
       const bytes = new Uint8Array(binaryStr.length);
@@ -3365,7 +3516,7 @@ var Workspace = class extends DurableObject {
           { role: "user", content: mimeType.startsWith("image/") ? [{ type: "image", image: input.image }] : `Extract and format all text content from this document. Preserve headings, lists, and structure.` }
         ];
         const nsm = this.getNSM();
-        const { messages: nsmEnriched, metadata: nsmMeta } = nsm ? await nsm.wrap(nsmMessages, "import", { domain: context?.domain }) : { messages: nsmMessages, metadata: null };
+        const { messages: nsmEnriched, metadata: nsmMeta } = nsm ? await nsm.wrap(nsmMessages, "import", domain ? { domain } : {}) : { messages: nsmMessages, metadata: null };
         const aiResponse = await this.env.AI.run("@cf/meta/llama-3.1-8b-instruct-fast", {
           messages: nsmEnriched,
           max_tokens: 2048
@@ -3512,17 +3663,12 @@ ${combined}`;
     if (url.pathname === "/api/search" && request.method === "POST") {
       const { query } = await request.json();
       if (!query) return json({ hits: [] });
-      const q = query.toLowerCase();
-      const hits = this.cards.filter((c) => {
-        const haystack = `${c.title} ${c.content}`.toLowerCase();
-        return haystack.includes(q);
-      }).slice(0, 10).map((c) => ({
-        id: c.id,
-        title: c.title,
-        type: c.type,
-        snippet: c.content.slice(0, 200)
-      }));
-      return json({ hits });
+      try {
+        const result = await searxSearch(this.env, query);
+        return json({ hits: result.hits, query, source: "searxng", backend: result.backend });
+      } catch (e) {
+        return json({ hits: [], error: e && e.message ? e.message : "Search failed" }, e && e.timeout ? 504 : 502);
+      }
     }
     if (url.pathname === "/api/classify" && request.method === "POST") {
       const { cardId, content } = await request.json();

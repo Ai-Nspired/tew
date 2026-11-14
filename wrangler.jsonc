@@ -3,6 +3,13 @@
   "main": "worker.js",
   "compatibility_date": "2026-08-30",
   "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "SEARX_URL": "https://searing-render.fly.dev",
+    "SEARX_TIMEOUT_MS": "20000",
+    "SEARX_FALLBACK_URL": "https://searing-render.onrender.com",
+    "SEARX_FALLBACK_TIMEOUT_MS": "60000",
+    "SEARX_HEDGE_MS": "8000"
+  },
   "durable_objects": {
     "bindings": [
       {
