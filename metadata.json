@@ -10,8 +10,23 @@
     {"name":"R2","type":"r2_bucket","bucket_name":"truth-engine-assets"}
   ],
   "exports": {
-    "Workspace": {"type":"durable-object","class_name":"Workspace","storage":"sqlite"}
+    "Workspace": {"type":"durable-object","class_name":"Workspace","storage":"legacy-kv"}
   },
   "compatibility_date": "2026-08-30",
-  "compatibility_flags": ["nodejs_compat"]
+  "compatibility_flags": ["nodejs_compat"],
+  "deploy": {
+    "platform": "Cloudflare Workers Builds",
+    "script": "tew",
+    "url": "https://tew.ai-n.workers.dev",
+    "trigger": "push to main",
+    "build_command": null,
+    "deploy_command": "npx wrangler deploy",
+    "root_directory": "/",
+    "build_variables": {},
+    "notes": [
+      "There is no build step: the repo has no package.json, so the deploy command runs wrangler directly from the repo root against wrangler.jsonc.",
+      "The Workspace Durable Object namespace is provisioned as legacy-kv. Declaring it as sqlite fails the deploy with storage_type_mismatch; the storage type cannot be changed after creation.",
+      "Durable Objects are declared in wrangler.jsonc under exports, which is mutually exclusive with migrations. A class that is provisioned but missing from exports fails with provisioned_class_missing_from_config."
+    ]
+  }
 }
