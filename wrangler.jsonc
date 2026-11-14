@@ -55,6 +55,10 @@
     {
       "binding": "ORPROXY",
       "service": "orproxy"
+    },
+    {
+      "binding": "TRUTH",
+      "service": "truth"
     }
   ]
 }

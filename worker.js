@@ -2993,6 +2993,7 @@ var server_default = {
           ai: !!env.AI,
           workspace: !!env.WORKSPACE,
           orproxy: orproxyReady,
+          truth: !!(env.TRUTH && typeof env.TRUTH.fetch === "function"),
           r2: !!env.R2,
           kv: {
             context: !!env.CONTEXT_KV,
@@ -3313,6 +3314,23 @@ var Workspace = class extends DurableObject {
       );
     }
     return this.llm;
+  }
+  async resolveTruth(query) {
+    if (!this.env || !this.env.TRUTH || typeof this.env.TRUTH.fetch !== "function") return null;
+    try {
+      const response = await this.env.TRUTH.fetch("https://truth/api/truth/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input: query }),
+        signal: AbortSignal.timeout(20000)
+      });
+      if (!response.ok) return null;
+      const data = await response.json();
+      if (!data || data.status !== "ok" || typeof data.answer !== "string" || !data.answer.trim()) return null;
+      return data;
+    } catch {
+      return null;
+    }
   }
   getNSM() {
     if (!this.nsm && this.env) {
@@ -3849,8 +3867,29 @@ ${principleList}` },
       if (scope === "principles") searchCards = [];
       const queryId = "qry_" + crypto.randomUUID();
       const llm = this.getLLM();
+      const truth = await this.resolveTruth(query);
+      const truthSummary = truth ? {
+        id: truth.id || null,
+        layer: truth.layer || null,
+        source: truth.source || null,
+        verified: !!truth.verified,
+        provisional: !!truth.provisional,
+        confidence: truth?.meta?.confidence ?? null
+      } : null;
       let results = [];
-      if (llm) {
+      if (truth) {
+        results = [{
+          sourceType: "truth",
+          sourceId: truth.id || queryId,
+          domain: stack.primary,
+          relevance: 1,
+          snippet: truth.answer,
+          confidence: { base: truthSummary.confidence ?? 0, total: truthSummary.confidence ?? 0 },
+          layer: truthSummary.layer,
+          verified: truthSummary.verified,
+          provisional: truthSummary.provisional
+        }];
+      } else if (llm) {
         try {
           results = await llm.deepQuery(query, allPrinciples, searchCards);
         } catch {
@@ -3876,6 +3915,7 @@ ${principleList}` },
         domainStack: stack,
         principlesApplied: allPrinciples.map((p) => p.id),
         coverageScore: Math.min(coverageScore, 1),
+        truth: truthSummary,
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       };
       const qDm = this.getDomainManager(stack.primary);
@@ -3889,6 +3929,7 @@ ${principleList}` },
         queryId,
         domainStack: stack,
         results: queryResult.results,
+        truth: queryResult.truth,
         coverageScore: queryResult.coverageScore,
         principlesApplied: queryResult.principlesApplied,
         domains: activeDomains,
@@ -4461,4 +4502,6 @@ export {
   Workspace,
   server_default as default
 };
-
+
+
+
