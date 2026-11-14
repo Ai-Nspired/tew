@@ -1487,17 +1487,18 @@
         const results = await res.json();
         const container = document.getElementById('searchResults'); container.style.display = 'block';
         container.innerHTML = (results.hits || []).map(r => `
-          <div class="search-result-item" onclick="materializeSearchResult('${escapeHtml(r.title)}', '${escapeHtml(r.snippet || '')}')">
+          <div class="search-result-item" onclick="materializeSearchResult('${escapeHtml(r.title)}', '${escapeHtml(r.snippet || '')}', '${escapeHtml(r.url || '')}')">
             <div class="result-title">${escapeHtml(r.title)}</div>
             <div class="result-snippet">${escapeHtml((r.snippet || '').slice(0, 120))}</div>
+            ${r.url ? '<div class="result-snippet" style="color:#4a9aff;font-size:10px;">' + escapeHtml(r.url) + '</div>' : ''}
           </div>
         `).join('') || '<div class="text-xs text-gray-500 p-2">No results</div>';
       } catch(e) { showToast('Search failed: ' + e.message, 'error'); }
       finally { btn.disabled = false; btn.textContent = 'Search'; }
     }
-    function materializeSearchResult(title, snippet) {
+    function materializeSearchResult(title, snippet, url) {
       closeSearch();
-      createCard('Document', title, snippet);
+      createCard({ type: 'Document', title, content: snippet + (url ? ' — source: ' + url : ''), url: url || undefined });
     }
     async function runCardSearch(cardId) {
       const el = document.getElementById(`card-${cardId}`);
@@ -1509,9 +1510,10 @@
         const res = await fetch(API('/search'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q }) });
         const data = await res.json();
         results.innerHTML = (data.hits || []).map(r => `
-          <div class="search-result-item" onclick="materializeSearchResult('${escapeHtml(r.title)}', '${escapeHtml(r.snippet || '')}')">
+          <div class="search-result-item" onclick="materializeSearchResult('${escapeHtml(r.title)}', '${escapeHtml(r.snippet || '')}', '${escapeHtml(r.url || '')}')">
             <div class="result-title">${escapeHtml(r.title)}</div>
             <div class="result-snippet">${escapeHtml((r.snippet || '').slice(0, 120))}</div>
+            ${r.url ? '<div class="result-snippet" style="color:#4a9aff;font-size:10px;">' + escapeHtml(r.url) + '</div>' : ''}
           </div>
         `).join('') || '<div class="text-xs text-gray-500 p-2">No results</div>';
       } catch(e) { results.innerHTML = '<div class="text-xs text-red-400 p-2">Search failed</div>'; }
@@ -2403,21 +2405,13 @@
 
     // ── NSM Panel ──
     async function openNSM() {
-      const cardCounter = cards.length;
-      const cardId = 'nsm_' + Date.now();
-      const card = {
-        id: cardId,
-        type: 'Document',
-        title: '🧠 NSM Domains',
-        content: 'Loading NSM domains...',
-        x: cardCounter * 30 + 40,
-        y: cardCounter * 30 + 40,
-        width: 520,
-        height: 420,
-      };
-      cards.push(card);
-      renderCard(card, card.x, card.y);
-      cardCounter++;
+      const existing = cards.find(c => c.title === '🧠 NSM Domains');
+      const card = existing || await createCard({ type: 'Document', title: '🧠 NSM Domains', content: '<div style="color:#666;text-align:center;padding:20px;">Loading NSM domains...</div>', rawHtml: true, width: 520, height: 420 });
+      const cardId = card.id;
+      if (existing) {
+        const host = document.querySelector('[data-rawcontent="' + cardId + '"]');
+        if (host) host.innerHTML = '<div style="color:#666;text-align:center;padding:20px;">Refreshing...</div>';
+      }
       updateStatus();
       try {
         const res = await fetch('/api/nsm/domains');
@@ -2457,22 +2451,18 @@
         html += '<button class="ctrl-btn" onclick="nsmRefresh()" style="font-size:10px;padding:3px 8px;border-color:#4affa0;color:#4affa0;">Refresh</button>';
         html += '<button class="ctrl-btn" onclick="nsmAcquireDomain()" style="font-size:10px;padding:3px 8px;border-color:#c8c84a;color:#c8c84a;">+ Acquire Domain</button>';
         html += '</div>';
-        const el = document.querySelector('[data-card-id="' + cardId + '"] .card-body');
+        const el = document.querySelector('[data-rawcontent="' + cardId + '"]');
         if (el) el.innerHTML = html;
+        card.content = html;
+        await updateCard(cardId, { content: html, rawHtml: true });
       } catch (e) {
-        const el = document.querySelector('[data-card-id="' + cardId + '"] .card-body');
+        const el = document.querySelector('[data-rawcontent="' + cardId + '"]');
         if (el) el.innerHTML = '<div style="color:#ff4a6a;">Failed to load NSM: ' + e.message + '</div>';
       }
     }
 
     async function nsmRefresh() {
-      const nsmCards = cards.filter(c => c.title === '🧠 NSM Domains');
-      if (nsmCards.length > 0) {
-        const cardId = nsmCards[nsmCards.length - 1].id;
-        const el = document.querySelector('[data-card-id="' + cardId + '"] .card-body');
-        if (el) el.innerHTML = '<div style="color:#666;text-align:center;padding:20px;">Refreshing...</div>';
-        openNSM();
-      }
+      return openNSM();
     }
 
     async function nsmAcquireDomain() {
