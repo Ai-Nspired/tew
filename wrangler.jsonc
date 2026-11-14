@@ -21,7 +21,7 @@
   "exports": {
     "Workspace": {
       "type": "durable-object",
-      "storage": "sqlite"
+      "storage": "legacy-kv"
     }
   },
   "kv_namespaces": [
