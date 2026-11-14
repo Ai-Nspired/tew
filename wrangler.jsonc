@@ -18,12 +18,12 @@
       }
     ]
   },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_classes": ["Workspace"]
+  "exports": {
+    "Workspace": {
+      "type": "durable-object",
+      "storage": "sqlite"
     }
-  ],
+  },
   "kv_namespaces": [
     {
       "binding": "KV_NAMESPACES",
