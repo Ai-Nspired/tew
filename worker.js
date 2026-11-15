@@ -1214,7 +1214,7 @@ var INDEX_HTML = `<!DOCTYPE html>
         <div class="card-header">
           <div class="flex items-center gap-2 flex-1">
             <span class="card-type-badge \${badgeClass}">\${card.type}</span>
-            <input class="card-title bg-transparent text-sm font-semibold text-white outline-none w-full" value="\${escapeHtml(card.title)}" data-title="\${card.id}" />
+            <input class="card-title bg-transparent text-sm font-semibold text-white outline-none w-full" value="\${escapeHtml(cardTitleText(card))}" placeholder="\${escapeHtml(cardTitleHint(card))}" data-title="\${card.id}" />
             \${domainSelector}
             \${eitlBtn}
             \${principleHtml}
@@ -1229,6 +1229,7 @@ var INDEX_HTML = `<!DOCTYPE html>
         <div class="resize-handle" data-resize="\${card.id}"></div>
       \`;
       canvas.appendChild(el);
+      if (isBrowser) fitBrowserFrames(el);
 
       // Attach event listeners
       el.addEventListener('click', (e) => { if (['TEXTAREA','INPUT','BUTTON','A','IFRAME','DETAILS','SUMMARY','SELECT'].includes(e.target.tagName)) return; toggleSelect(card.id); });
@@ -1640,6 +1641,47 @@ var INDEX_HTML = `<!DOCTYPE html>
       fmtInsert(cardId, '\\n' + prefix, '\\n', 'heading');
     }
 
+    // A browser card carries the page's own title when it had one. When it did not,
+    // the field showed the word "undefined"; the URL says more.
+    function hostOf(url) {
+      try { return new URL(String(url || '')).hostname.replace(/^www\./, ''); } catch (e) { return ''; }
+    }
+    function cardTitleText(card) {
+      const title = String(card && card.title != null ? card.title : '').trim();
+      if (!title || title === 'undefined' || title === 'null') return '';
+      return title;
+    }
+    function cardTitleHint(card) {
+      return hostOf(card && card.url) || (card && card.type ? card.type + ' card' : 'Untitled');
+    }
+
+    // A phone-shaped page laid out at 430px and scaled into whatever the card is:
+    // a clipped wheel and a half button are worse than smaller type.
+    const BROWSER_LAYOUT_WIDTH = 430;
+    function fitBrowserFrame(frame) {
+      const viewer = frame && frame.closest ? frame.closest('.browser-viewer') : null;
+      if (!viewer) return;
+      const width = viewer.clientWidth;
+      const height = viewer.clientHeight;
+      if (!width || !height) return;
+      const scale = Math.min(1, width / BROWSER_LAYOUT_WIDTH);
+      frame.style.width = Math.round(width / scale) + 'px';
+      frame.style.height = Math.round(height / scale) + 'px';
+      frame.style.transformOrigin = 'top left';
+      frame.style.transform = scale < 1 ? 'scale(' + scale.toFixed(4) + ')' : 'none';
+    }
+    function fitBrowserFrames(root) {
+      const scope = root && root.querySelectorAll ? root : document;
+      scope.querySelectorAll('iframe[data-browser-frame]').forEach((frame) => {
+        fitBrowserFrame(frame);
+        const viewer = frame.closest('.browser-viewer');
+        if (!viewer || !window.ResizeObserver || viewer.dataset.fitWatched) return;
+        viewer.dataset.fitWatched = '1';
+        new ResizeObserver(() => fitBrowserFrame(frame)).observe(viewer);
+      });
+    }
+    window.addEventListener('resize', () => fitBrowserFrames(document));
+
     // ── Browser Navigation ──
     function browserNavigate(cardId) {
       const el = document.getElementById(\`card-\${cardId}\`);
@@ -1661,6 +1703,7 @@ var INDEX_HTML = `<!DOCTYPE html>
           viewer.innerHTML = \`<iframe data-browser-frame="\${cardId}" sandbox="allow-scripts allow-forms allow-popups allow-same-origin" src="/api/proxy?url=\${encodeURIComponent(url)}" style="width:100%;height:100%;border:none;"></iframe>\`;
         }
       }
+      fitBrowserFrames(el);
       // Save URL to card
       updateCard(cardId, { url });
     }
