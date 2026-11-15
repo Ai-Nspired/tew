@@ -239,8 +239,13 @@ pulled, not declared missing** — that is how ARA was inspected.
 
 **Repositories seen 2026-11-15** (both connected accounts see the same set): `Ai-Nspired/tew`,
 `dno-luigi/{cods, mind, truth, ai-proxy, orproxy, open-template, memKV, i.nspired, vibe, aiprox}`,
-`Ai-Nspired/{pi-harness-example, truth-engine, cosmo, kdg, mmap}`. **There is no `ara` repo in
-either account**, so ARA's source is not in GitHub as of that date.
+`Ai-Nspired/{pi-harness-example, truth-engine, cosmo, kdg, mmap}`.
+
+**ARA's repo is `Ai-Nspired/ara`** — public, three files (`src/worker.js`, `wrangler.jsonc`,
+`package.json`), and the first page of the repository listing does not show it, so a paginated
+listing that stops early will miss it. Check the URL before concluding a repo does not exist.
+Its `wrangler.jsonc` declares only `KV`; the live bindings (`BROWSER`, `DB`, `R2`) are not in it,
+so reconcile before any deploy or the deploy drops them.
 
 ---
 
