@@ -1,13 +1,14 @@
 # AGENTS.md — TEW
 
-**TEW is the Truth Engine Workspace**: the Worker at `https://tew.ai-n.workers.dev`
+**TEW is the Truth Engine Workstation**: the Worker at `https://tew.ai-n.workers.dev`
 that hosts the collaborative card workspace, the principle engine, the NSM panel
 and the query/audit paths. It is the centre of this account. Everything below is
 written from TEW's point of view.
 
 Live facts in this file were verified against the deployed Workers on **2026-11-14**.
 Anything not verified says so. Do not upgrade an assumption to a fact without
-re-checking it.
+re-checking it. §11 and §12 were added **2026-11-15** from the owner's own statements;
+where they disagree with anything above, they win.
 
 ---
 
@@ -127,6 +128,13 @@ balance.** Guard it before it ships.
 
 ## 5. Truth is the source; TEW is the client
 
+**Legal first.** TEW is the Truth Engine Workstation, not a general chat surface.
+Legal is the default lane and truth is the default answer: `resolveTruth()` runs
+before generation on every path that asks a question, and a miss is the only reason
+to generate. The general domains exist as an escape lane for material that plainly
+is not legal — never as the default. The sibling apps (`mind`, `cods`) are general
+first with legal as one of eleven domains; do not copy that ordering here.
+
 `POST /api/query` calls `TRUTH` → `POST /api/truth/resolve {"input": ...}` **first**.
 A hit is returned as a `truth` result and the LLM path is skipped entirely;
 generation runs only when truth cannot answer (no binding, non-2xx, malformed
@@ -181,3 +189,81 @@ Priority order; none of these are done.
    `/api/truth/provisional/query` should stay public.
 8. **Remove `ai-proxy`'s 13 dead bindings** once the rebuild is planned — unused
    service bindings are reachable surface.
+
+---
+
+## 8. Stop means stop
+
+When the owner says shut up, stop talking, or anything that ends the turn: stop in that same
+breath. No summary, no restatement, no apology paragraph, no follow-up question, no "understood"
+plus three sentences. One line at most, or nothing until asked.
+
+Talking after a stop order is itself the violation, and repeating it is how trust gets lost here.
+The same applies to repeats: the second time he says it, the reply is silence, not an explanation
+of why the first one was reasonable.
+
+## 9. "You're missing something" means ask, not guess
+
+When the owner says something is missing or wrong, do not hunt for a candidate and present it as
+the answer. Ask what it is, in one line, and wait. Two guesses in a row is already too many.
+
+## 10. Check in before changing a file
+
+No file is edited until the owner has seen which file, what changes, and why, and said to go
+ahead. One check-in per change; a "yes" covers that change only. Reading is always fine.
+
+When the owner says **update** a document, that is the go-ahead for that document: write in what
+he just told you, and **delete any language anywhere in it that contradicts what he said**. An
+update that leaves a stale claim standing is not an update.
+
+---
+
+## 11. Access — use what you have before asking for it
+
+The owner has given standing access to GitHub and Cloudflare. Asking for it is a mistake. Writing
+a credential into a file, a command, a commit message or chat is a worse one.
+
+**GitHub.** `Ai-Nspired/tew` is connected for this account; it pushes through the authenticated
+integration. Every other repo is reachable with `GITHUB_PAT` from the environment, through an
+askpass helper, so the token never appears in a URL or a command line:
+
+- identity inside each repo: `dno-luigi <dno@ai-n.org>`
+- push: `GIT_ASKPASS=/tmp/askpass.sh git push origin HEAD:main`, where the helper prints
+  `x-access-token` then `$GITHUB_PAT` (recreate it — `/tmp` does not survive)
+- a push to `main` is what deploys TEW (Workers Builds, `npx wrangler deploy`)
+
+**Cloudflare.** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ID` are in the environment, so `wrangler`
+works with no login: `deploy`, `deployments`, `tail`, KV / D1 / R2 operations, `--dry-run`. Never
+run `wrangler login`. Never print or write the token. **A Worker whose source you cannot see gets
+pulled, not declared missing** — that is how ARA was inspected.
+
+**Repositories seen 2026-11-15** (both connected accounts see the same set): `Ai-Nspired/tew`,
+`dno-luigi/{cods, mind, truth, ai-proxy, orproxy, open-template, memKV, i.nspired, vibe, aiprox}`,
+`Ai-Nspired/{pi-harness-example, truth-engine, cosmo, kdg, mmap}`. **There is no `ara` repo in
+either account**, so ARA's source is not in GitHub as of that date.
+
+---
+
+## 12. ARA and the memory — the owner's statements, 2026-11-15
+
+These are his decisions, not inferences. They override anything elsewhere that disagrees.
+
+- **Memoria is ours, and she curates it.** `KV` `4a9bfbff…` holds the account's legacy memory
+  (~1,150 entries) and is shared with mind's `MEM` and truth's `PROV_TRUTH`. ARA reads it and
+  **helps curate it**. It is not off limits, and it is not a cache to be ignored.
+- **Cache expires; records do not.** Anything a person will later ingest, promote or correct gets
+  no TTL, or a day at minimum — **never `expirationTtl: 3600`**. Candidates written with an hour
+  on them could never be promoted, because promotion is a later read of something already gone.
+  That is the actual fault behind candidates failing to reach master truth.
+- **Paid deciders only. Never a `:free` slug** — the price of free is that they get to look at our
+  data. Ladder: `pplx-decider-flash-v1.2` ($0.01/M) → `pplx-decider-v1.2` ($0.02/M, several
+  questions per pass) → `scaledown/classify-1` ($0.04/M, documents and 1M ctx). `ai-proxy`
+  `POST /api/decide` already routes this ladder and returns `usage.cost`.
+- **`AI_SEARCH` is not wanted.** It was removed deliberately. Do not add it back.
+- **Microsites** are reached without any preset or proxy switch turned on.
+- **ARA's own bindings**: `BROWSER`, `DB` (D1 `248766b1-d102-4e9e-a228-a19281ed5fe6`),
+  `R2` (`speakeasy-files`), `KV` (`4a9bfbff…`), `OPENROUTER_API_KEY`.
+- **A decision model writes nothing.** It answers presented questions; it never composes a
+  question, never writes prose, never writes the table. Rows are written by the workflow from the
+  interaction — what was asked, what was decided, whether that was correct.
+
