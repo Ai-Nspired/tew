@@ -296,8 +296,8 @@ These are his decisions, not inferences. They override anything elsewhere that d
   system you do not understand, and do not guess at what it does.
 - **TEW is the truth engine workstation.** It pulls truths, results, queries and audits as
   the truth engine produces them. Nothing is wired into it for ARA.
-- **TEP exists. Treat it as if it does not.** Nothing connects TEP to the engine or to
-  anything else; no one asked for that.
+- **TEP is in use. Nothing new is wired into it.** Do not invent a connection between TEP
+  and the engine, or between TEP and ARA. Use TEP as it already works.
 - **ARA decides in front of the tools that are actually in use** — the cards workstation and
   the truth engine — not in front of things you imagine.
 - The owner should never have to repeat a rule. If a rule is only in the conversation, it is
