@@ -228,8 +228,22 @@ integration. Every other repo is reachable with `GITHUB_PAT` from the environmen
 askpass helper, so the token never appears in a URL or a command line:
 
 - identity inside each repo: `dno-luigi <dno@ai-n.org>`
-- push: `GIT_ASKPASS=/tmp/askpass.sh git push origin HEAD:main`, where the helper prints
-  `x-access-token` then `$GITHUB_PAT` (recreate it — `/tmp` does not survive)
+- push: `GIT_ASKPASS=/tmp/askpass.sh git push origin HEAD:main` (recreate the helper — `/tmp`
+  does not survive). The helper must answer **one** prompt, not print both values: printing the
+  username and the token together makes git use the username as the password and GitHub answers
+  `Invalid username or token`, which looks exactly like a dead token. Correct helper:
+
+  ```sh
+  #!/bin/sh
+  case "$1" in
+    *sername*) echo "x-access-token" ;;
+    *) echo "$GITHUB_PAT" ;;
+  esac
+  ```
+
+  To test a token without touching git: `curl -s -o /dev/null -w '%{http_code}' -H
+  "Authorization: Bearer $GITHUB_PAT" https://api.github.com/user` — 200 means the token is
+  alive, and a failing git push is then the helper or the scope, not the token.
 - a push to `main` is what deploys TEW (Workers Builds, `npx wrangler deploy`)
 
 **Cloudflare.** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ID` are in the environment, so `wrangler`
