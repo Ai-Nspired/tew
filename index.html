@@ -2158,11 +2158,14 @@
         '<span><button class="ctrl-btn" id="watchAdd" style="font-size:10px;padding:2px 8px">+ tool</button> ' +
         '<button class="ctrl-btn" id="watchRefresh" style="font-size:10px;padding:2px 8px">refresh</button> ' +
         '<button class="ctrl-btn" id="watchClose" style="font-size:10px;padding:2px 8px">close</button></span>' +
-        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>';
+        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div>';
       document.body.appendChild(el);
       el.querySelector('#watchClose').onclick = function () { el.style.display = 'none'; };
       el.querySelector('#watchRefresh').onclick = function () { refreshWatchtower(); };
       el.querySelector('#watchAdd').onclick = function () { addWatchTool(); };
+      el.querySelector('#learnAdd').onclick = function () { addLearnRow(); };
+      el.querySelector('#learnForget').onclick = function () { learnForget(); };
+      el.querySelector('#learnSeed').onclick = function () { learnSeed(); };
       return el;
     }
     async function openWatchtower() {
@@ -2208,6 +2211,116 @@
       } catch (e) {
         rows.textContent = 'watch error: ' + e.message;
       }
+      loadLearned();
+    }
+    async function loadLearned() {
+      const box = document.getElementById('learnRows');
+      if (!box) return;
+      const key = watchKey();
+      if (!key) return;
+      box.textContent = 'reading...';
+      try {
+        const res = await fetch(API('/learn'), { headers: { 'x-admin-key': key } });
+        const d = await res.json();
+        if (!res.ok) { box.textContent = d.message || d.error || 'learn failed'; return; }
+        renderLearn(d);
+      } catch (e) {
+        box.textContent = 'learn error: ' + e.message;
+      }
+    }
+    function learnTag(r) {
+      const bits = [r.tier || 'learned', r.status || 'active'];
+      if (r.fit !== null && r.fit !== undefined) bits.push('fit ' + r.fit);
+      if (r.hits) bits.push('used ' + r.hits);
+      if (r.earned) bits.push('earned');
+      if (r.tool) bits.push(r.tool);
+      return bits.join(' \u00b7 ');
+    }
+    function renderLearn(d) {
+      const box = document.getElementById('learnRows');
+      if (!box) return;
+      box.innerHTML = '';
+      const rows = d.rows || [];
+      if (!rows.length) {
+        box.textContent = 'Nothing yet. A tool reports here when it learns something, or add a row.';
+        return;
+      }
+      rows.forEach(function (r) {
+        const row = document.createElement('div');
+        row.style.cssText = 'padding:7px 0;border-bottom:1px solid var(--border)';
+        const tag = document.createElement('div');
+        tag.style.cssText = 'font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)';
+        tag.textContent = learnTag(r);
+        const q = document.createElement('div');
+        q.style.cssText = 'font-size:11px;color:var(--text);margin-top:2px';
+        q.textContent = r.q || '';
+        const a = document.createElement('div');
+        a.style.cssText = 'font-size:11px;color:var(--muted);line-height:1.45';
+        a.textContent = r.a || '';
+        const ctl = document.createElement('div');
+        ctl.style.cssText = 'display:flex;gap:4px;margin-top:4px';
+        const flip = document.createElement('button');
+        flip.className = 'ctrl-btn';
+        flip.style.cssText = 'height:20px;font-size:10px;padding:0 6px';
+        flip.textContent = r.status === 'candidate' ? 'Keep' : 'Hold';
+        flip.onclick = function () { learnAction(r.status === 'candidate' ? 'keep' : 'hold', r); };
+        const del = document.createElement('button');
+        del.className = 'ctrl-btn';
+        del.style.cssText = 'height:20px;font-size:10px;padding:0 6px';
+        del.textContent = 'Remove';
+        del.onclick = function () { learnAction('remove', r); };
+        ctl.appendChild(flip);
+        ctl.appendChild(del);
+        row.appendChild(tag);
+        row.appendChild(q);
+        row.appendChild(a);
+        row.appendChild(ctl);
+        box.appendChild(row);
+      });
+      const foot = document.createElement('div');
+      foot.style.cssText = 'margin-top:6px;font-size:10px;color:var(--dim)';
+      const c = d.counts || {};
+      foot.textContent = (c.active || 0) + ' active \u00b7 ' + (c.candidate || 0) + ' candidates \u00b7 ' + (c.rules || 0) + ' domains' + (d.at ? ' \u00b7 ' + d.at : '');
+      box.appendChild(foot);
+    }
+    async function learnPost(body) {
+      const key = watchKey();
+      if (!key) return null;
+      const res = await fetch(API('/learn'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify(body)
+      });
+      const d = await res.json().catch(function () { return {}; });
+      if (!res.ok) { showToast(d.message || d.error || 'learn failed', 'error'); return null; }
+      return d;
+    }
+    async function learnAction(act, r) {
+      const d = await learnPost({ action: act, q: r.q });
+      if (!d) return;
+      if (act === 'remove') showToast('Removed', 'success');
+      else if (act === 'keep') showToast('Kept as active', 'success');
+      else showToast('Held as candidate', 'success');
+      loadLearned();
+    }
+    async function addLearnRow() {
+      const q = window.prompt('What should it know about you?');
+      if (!q) return;
+      const a = window.prompt('And what to do about it?');
+      if (!a) return;
+      const d = await learnPost({ action: 'add', q: q, a: a, source: 'him', tool: 'tew' });
+      if (d) { showToast('Added', 'success'); loadLearned(); }
+    }
+    async function learnForget() {
+      if (!window.confirm('Forget everything the ledger holds? Domains go too.')) return;
+      const d = await learnPost({ action: 'forget' });
+      if (d) { showToast('Forgotten: ' + d.forgot + ' rows', 'success'); loadLearned(); }
+    }
+    async function learnSeed() {
+      const d = await learnPost({ action: 'seed' });
+      if (!d) return;
+      showToast('Seeded ' + (d.seeded || 0) + ' rows from cods', 'success');
+      loadLearned();
     }
     async function addWatchTool() {
       const name = window.prompt('tool name');

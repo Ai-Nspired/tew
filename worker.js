@@ -2728,11 +2728,14 @@ var INDEX_HTML = `<!DOCTYPE html>
         '<span><button class="ctrl-btn" id="watchAdd" style="font-size:10px;padding:2px 8px">+ tool</button> ' +
         '<button class="ctrl-btn" id="watchRefresh" style="font-size:10px;padding:2px 8px">refresh</button> ' +
         '<button class="ctrl-btn" id="watchClose" style="font-size:10px;padding:2px 8px">close</button></span>' +
-        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>';
+        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div>';
       document.body.appendChild(el);
       el.querySelector('#watchClose').onclick = function () { el.style.display = 'none'; };
       el.querySelector('#watchRefresh').onclick = function () { refreshWatchtower(); };
       el.querySelector('#watchAdd').onclick = function () { addWatchTool(); };
+      el.querySelector('#learnAdd').onclick = function () { addLearnRow(); };
+      el.querySelector('#learnForget').onclick = function () { learnForget(); };
+      el.querySelector('#learnSeed').onclick = function () { learnSeed(); };
       return el;
     }
     async function openWatchtower() {
@@ -2778,6 +2781,116 @@ var INDEX_HTML = `<!DOCTYPE html>
       } catch (e) {
         rows.textContent = 'watch error: ' + e.message;
       }
+      loadLearned();
+    }
+    async function loadLearned() {
+      const box = document.getElementById('learnRows');
+      if (!box) return;
+      const key = watchKey();
+      if (!key) return;
+      box.textContent = 'reading...';
+      try {
+        const res = await fetch(API('/learn'), { headers: { 'x-admin-key': key } });
+        const d = await res.json();
+        if (!res.ok) { box.textContent = d.message || d.error || 'learn failed'; return; }
+        renderLearn(d);
+      } catch (e) {
+        box.textContent = 'learn error: ' + e.message;
+      }
+    }
+    function learnTag(r) {
+      const bits = [r.tier || 'learned', r.status || 'active'];
+      if (r.fit !== null && r.fit !== undefined) bits.push('fit ' + r.fit);
+      if (r.hits) bits.push('used ' + r.hits);
+      if (r.earned) bits.push('earned');
+      if (r.tool) bits.push(r.tool);
+      return bits.join(' \u00b7 ');
+    }
+    function renderLearn(d) {
+      const box = document.getElementById('learnRows');
+      if (!box) return;
+      box.innerHTML = '';
+      const rows = d.rows || [];
+      if (!rows.length) {
+        box.textContent = 'Nothing yet. A tool reports here when it learns something, or add a row.';
+        return;
+      }
+      rows.forEach(function (r) {
+        const row = document.createElement('div');
+        row.style.cssText = 'padding:7px 0;border-bottom:1px solid var(--border)';
+        const tag = document.createElement('div');
+        tag.style.cssText = 'font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)';
+        tag.textContent = learnTag(r);
+        const q = document.createElement('div');
+        q.style.cssText = 'font-size:11px;color:var(--text);margin-top:2px';
+        q.textContent = r.q || '';
+        const a = document.createElement('div');
+        a.style.cssText = 'font-size:11px;color:var(--muted);line-height:1.45';
+        a.textContent = r.a || '';
+        const ctl = document.createElement('div');
+        ctl.style.cssText = 'display:flex;gap:4px;margin-top:4px';
+        const flip = document.createElement('button');
+        flip.className = 'ctrl-btn';
+        flip.style.cssText = 'height:20px;font-size:10px;padding:0 6px';
+        flip.textContent = r.status === 'candidate' ? 'Keep' : 'Hold';
+        flip.onclick = function () { learnAction(r.status === 'candidate' ? 'keep' : 'hold', r); };
+        const del = document.createElement('button');
+        del.className = 'ctrl-btn';
+        del.style.cssText = 'height:20px;font-size:10px;padding:0 6px';
+        del.textContent = 'Remove';
+        del.onclick = function () { learnAction('remove', r); };
+        ctl.appendChild(flip);
+        ctl.appendChild(del);
+        row.appendChild(tag);
+        row.appendChild(q);
+        row.appendChild(a);
+        row.appendChild(ctl);
+        box.appendChild(row);
+      });
+      const foot = document.createElement('div');
+      foot.style.cssText = 'margin-top:6px;font-size:10px;color:var(--dim)';
+      const c = d.counts || {};
+      foot.textContent = (c.active || 0) + ' active \u00b7 ' + (c.candidate || 0) + ' candidates \u00b7 ' + (c.rules || 0) + ' domains' + (d.at ? ' \u00b7 ' + d.at : '');
+      box.appendChild(foot);
+    }
+    async function learnPost(body) {
+      const key = watchKey();
+      if (!key) return null;
+      const res = await fetch(API('/learn'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify(body)
+      });
+      const d = await res.json().catch(function () { return {}; });
+      if (!res.ok) { showToast(d.message || d.error || 'learn failed', 'error'); return null; }
+      return d;
+    }
+    async function learnAction(act, r) {
+      const d = await learnPost({ action: act, q: r.q });
+      if (!d) return;
+      if (act === 'remove') showToast('Removed', 'success');
+      else if (act === 'keep') showToast('Kept as active', 'success');
+      else showToast('Held as candidate', 'success');
+      loadLearned();
+    }
+    async function addLearnRow() {
+      const q = window.prompt('What should it know about you?');
+      if (!q) return;
+      const a = window.prompt('And what to do about it?');
+      if (!a) return;
+      const d = await learnPost({ action: 'add', q: q, a: a, source: 'him', tool: 'tew' });
+      if (d) { showToast('Added', 'success'); loadLearned(); }
+    }
+    async function learnForget() {
+      if (!window.confirm('Forget everything the ledger holds? Domains go too.')) return;
+      const d = await learnPost({ action: 'forget' });
+      if (d) { showToast('Forgotten: ' + d.forgot + ' rows', 'success'); loadLearned(); }
+    }
+    async function learnSeed() {
+      const d = await learnPost({ action: 'seed' });
+      if (!d) return;
+      showToast('Seeded ' + (d.seeded || 0) + ' rows from cods', 'success');
+      loadLearned();
     }
     async function addWatchTool() {
       const name = window.prompt('tool name');
@@ -3684,6 +3797,127 @@ async function probeTool(tool) {
   }
 }
 
+// ─── the learning ladder ─────────────────────────────────────────────────────
+// TEW is the top of the ladder: one ledger, scored here, so every tool that
+// reads it behaves the same. The shape is cods' own rows, plus which tool
+// taught it. A row is never deleted by the machine; it is held, or forgotten
+// by him on purpose.
+const LEARN_STORE = "LEARN:ledger";
+const LEARN_USE = 0.2;
+const LEARN_CANDIDATE = 0.5;
+const LEARN_EARN = 3;
+const LEARN_STOP = new Set(["about", "after", "again", "answer", "answers", "before", "being", "could", "every", "first", "found", "given", "going", "here", "there", "these", "those", "which", "while", "would", "should", "still", "where", "thing", "things", "using", "wants", "write", "wrote", "this", "that", "from", "with", "have", "what", "want", "your", "they", "them", "when", "then", "just", "like", "card", "cards", "know", "must", "will", "been", "into", "over", "only", "also", "than", "more", "most", "each", "some", "such", "very", "does", "done", "give", "make", "made", "take", "same", "both"]);
+
+function learnWords(text) {
+  const out = [];
+  String(text || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).forEach((wd) => {
+    if (wd.length < 4 || LEARN_STOP.has(wd)) return;
+    const stem = wd.replace(/s$/, "");
+    if (out.indexOf(stem) < 0) out.push(stem);
+  });
+  return out;
+}
+function learnMatch(row, prompt) {
+  const want = learnWords(prompt);
+  const has = learnWords(String((row && row.q) || "") + " " + String((row && row.a) || ""));
+  if (!want.length || !has.length) return { score: 0, same: [], differ: has.slice(0, 5) };
+  const same = want.filter((wd) => has.indexOf(wd) >= 0);
+  const differ = has.filter((wd) => want.indexOf(wd) < 0).slice(0, 5);
+  return { score: Math.min(1, same.length / Math.max(1, Math.min(want.length, has.length))), same, differ };
+}
+function learnAlike(x, y) {
+  const A = learnWords(x);
+  const B = learnWords(y);
+  if (!A.length || !B.length) return 0;
+  const same = A.filter((wd) => B.indexOf(wd) >= 0).length;
+  return same / (A.length + B.length - same);
+}
+function learnCounts(ledger) {
+  const rows = (ledger && ledger.rows) || [];
+  return {
+    total: rows.length,
+    active: rows.filter((r) => r && r.status !== "candidate").length,
+    candidate: rows.filter((r) => r && r.status === "candidate").length,
+    rules: Object.keys((ledger && ledger.domains) || {}).length
+  };
+}
+async function loadLedger(dobj) {
+  const raw = await dobj.ctx.storage.get(LEARN_STORE);
+  const l = raw && typeof raw === "object" ? raw : {};
+  l.rows = Array.isArray(l.rows) ? l.rows : [];
+  l.domains = l.domains && typeof l.domains === "object" ? l.domains : {};
+  l.events = Array.isArray(l.events) ? l.events : [];
+  return l;
+}
+async function saveLedger(dobj, ledger) {
+  ledger.rows = ledger.rows.slice(-200);
+  ledger.events = ledger.events.slice(-50);
+  ledger.updated = (new Date()).toISOString();
+  await dobj.ctx.storage.put(LEARN_STORE, ledger);
+}
+// Moving a row is the machine's half: it holds what does not fit and lifts back
+// what does. His own rows and anything he kept are never held.
+function learnTend(ledger, prompt) {
+  let moved = 0;
+  for (const row of ledger.rows) {
+    if (!row) continue;
+    const m = learnMatch(row, prompt || "");
+    row.fit = Number(m.score.toFixed(2));
+    row.same = m.same.slice(0, 4);
+    row.differs = m.differ.slice(0, 4);
+    const fits = m.score >= LEARN_USE;
+    if (row.tier === "his" || row.kept) continue;
+    if (row.status === "candidate") {
+      if (fits) {
+        row.hits = (row.hits || 0) + 1;
+        if (row.hits >= LEARN_EARN) {
+          row.status = "active";
+          row.earned = (new Date()).toISOString();
+          row.why = null;
+        }
+        moved += 1;
+      }
+    } else if (!fits) {
+      row.status = "candidate";
+      row.hits = row.hits || 0;
+      row.why = "not relevant to " + String(prompt || "").slice(0, 60);
+      row.moved = (new Date()).toISOString();
+      moved += 1;
+    }
+  }
+  return moved;
+}
+function learnHint(ledger, prompt, domain) {
+  const rows = (ledger && ledger.rows) || [];
+  const dom = String(domain || "").trim().toLowerCase();
+  const his = rows.filter((r) => r && r.tier === "his" && r.status !== "candidate").slice(-8);
+  const rules = dom && ledger.domains[dom] && Array.isArray(ledger.domains[dom]) ? ledger.domains[dom] : [];
+  const learned = rows
+    .filter((r) => r && r.tier !== "his")
+    .map((r) => ({ r: r, m: learnMatch(r, prompt) }))
+    .filter((x) => x.r.status !== "candidate" || x.m.score >= LEARN_CANDIDATE)
+    .sort((x, y) => y.m.score - x.m.score)
+    .slice(0, 4);
+  const parts = [];
+  if (his.length) {
+    parts.push("His own preferences, above the domain rules and above anything learned in chat:\n" + his.map((r) => "- " + String(r.a || "").slice(0, 300)).join("\n"));
+  }
+  if (rules.length) {
+    parts.push("Principles for " + dom + ", above anything learned in chat:\n" + rules.map((x) => "- " + String((x && x.text) || "").slice(0, 300)).join("\n"));
+  }
+  if (learned.length) {
+    parts.push("Learned in chat, below the two levels above:\n" + learned.map((x) => String(x.r.q || "").slice(0, 90) + " -> " + String(x.r.a || "").slice(0, 400) + " [fits " + x.m.score.toFixed(2) + (x.r.status === "candidate" ? ", candidate" : "") + "]").join("; "));
+  }
+  return { hint: parts.length ? "Learned from this user: " + parts.join("; ") + "." : "", picked: learned };
+}
+function sameKey(given, want) {
+  const a = String(given || "").trim();
+  const b = String(want || "").trim();
+  let drift = a.length ^ b.length;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) drift |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return drift === 0;
+}
+
 var Workspace = class extends DurableObject {
   cards = null;
   principles = null;
@@ -4355,6 +4589,145 @@ ${principleList}` },
       await this.persist();
       this.broadcast({ type: "card_created", card: queryCard });
       return json({ ...queryResult, card: queryCard });
+    }
+    if (url.pathname === "/api/learn" && (request.method === "GET" || request.method === "POST")) {
+      // ADMIN_KEY for the sheet, LEARN_KEY for the tools that read it back.
+      const adminKey = String((this.env && this.env.ADMIN_KEY) || "").trim();
+      const toolKey = String((this.env && this.env.LEARN_KEY) || "").trim();
+      const givenAdmin = String(request.headers.get("x-admin-key") || "").trim();
+      const givenTool = String(request.headers.get("x-learn-key") || "").trim();
+      if (!adminKey && !toolKey) {
+        return json({ error: "learn_not_configured", message: "Set ADMIN_KEY or LEARN_KEY on this Worker." }, 503);
+      }
+      const allowed = (adminKey && sameKey(givenAdmin, adminKey)) || (toolKey && sameKey(givenTool, toolKey));
+      if (!allowed) return json({ error: "key_required", message: "Send x-admin-key (ADMIN_KEY) or x-learn-key (LEARN_KEY)." }, 401);
+
+      const ledger = await loadLedger(this);
+      const now = (new Date()).toISOString();
+
+      if (request.method === "GET") {
+        const prompt = String(url.searchParams.get("prompt") || "");
+        const domain = String(url.searchParams.get("domain") || "");
+        if (prompt) {
+          const moved = learnTend(ledger, prompt);
+          if (moved) await saveLedger(this, ledger);
+        }
+        const built = learnHint(ledger, prompt, domain);
+        const rows = ledger.rows.slice().reverse().slice(0, 60).map((r) => ({
+          q: r.q, a: r.a, tier: r.tier || "learned", status: r.status || "active", tool: r.tool || null,
+          kept: !!r.kept, hits: r.hits || 0, earned: r.earned || null, fit: r.fit, why: r.why || null, at: r.at || null
+        }));
+        return json({
+          at: now,
+          hint: built.hint,
+          used: built.picked.map((x) => ({ q: x.r.q, fit: Number(x.m.score.toFixed(2)) })),
+          rows: rows,
+          counts: learnCounts(ledger),
+          domains: Object.keys(ledger.domains)
+        });
+      }
+
+      const body = await request.json().catch(() => ({}));
+      const act = String(body.action || "add").trim();
+      const q = String(body.q || "").trim().slice(0, 120);
+      const a = String(body.a || "").trim().slice(0, 400);
+      const tool = String(body.tool || "tew").trim().toLowerCase().slice(0, 20);
+      const source = String(body.source || "him").trim().toLowerCase().slice(0, 20);
+      const tierIn = String(body.tier || "").trim().toLowerCase();
+      const out = { ok: true, action: act };
+
+      if (act === "add" || act === "edit") {
+        if (!q || !a) return json({ error: "q and a are required" }, 400);
+        const from = String(body.from || "").trim();
+        ledger.rows = ledger.rows.filter((r) => r && r.q !== q && (!from || r.q !== from));
+        const twin = ledger.rows.find((r) => r && r.q !== q && learnAlike(String(r.a || ""), a) >= 0.8);
+        if (twin) {
+          twin.before = String(twin.a || "").slice(0, 300);
+          twin.a = a;
+          twin.merged = (twin.merged || 0) + 1;
+          twin.at = now;
+          twin.tool = tool;
+        } else {
+          ledger.rows.push({
+            id: "lr_" + crypto.randomUUID(), q: q, a: a,
+            prompt: String(body.prompt || "").slice(0, 160), source: source, tool: tool,
+            tier: tierIn || (source === "him" ? "his" : "learned"),
+            status: "active", kept: source === "him", hits: 0, at: now
+          });
+        }
+        out.saved = q;
+      } else if (act === "keep" || act === "hold") {
+        const row = ledger.rows.find((r) => r && r.q === q);
+        if (!row) return json({ error: "Nothing stored under that" }, 404);
+        if (act === "keep") { row.status = "active"; row.kept = true; row.why = null; }
+        else { row.status = "candidate"; row.kept = false; row.why = "held by him"; }
+        row.moved = now;
+      } else if (act === "remove") {
+        const before = ledger.rows.length;
+        ledger.rows = ledger.rows.filter((r) => !r || r.q !== q);
+        out.removed = before - ledger.rows.length;
+      } else if (act === "forget") {
+        out.forgot = ledger.rows.length;
+        ledger.rows = [];
+        ledger.domains = {};
+      } else if (act === "rule" || act === "rule-remove") {
+        const dom = String(body.domain || "").trim().toLowerCase().slice(0, 40);
+        const text = String(body.text || body.a || "").trim().slice(0, 300);
+        if (!dom || !text) return json({ error: "domain and text are required" }, 400);
+        ledger.domains[dom] = Array.isArray(ledger.domains[dom]) ? ledger.domains[dom] : [];
+        if (act === "rule") {
+          ledger.domains[dom] = ledger.domains[dom].filter((r) => r && r.text !== text);
+          ledger.domains[dom].push({ text: text, at: now, tool: tool });
+        } else {
+          ledger.domains[dom] = ledger.domains[dom].filter((r) => !r || r.text !== text);
+          if (!ledger.domains[dom].length) delete ledger.domains[dom];
+        }
+      } else if (act === "seed") {
+        // Fill the ladder from cods once, so it starts with what he already taught it.
+        let res;
+        try {
+          res = await fetch("https://cods.ai-n.workers.dev/prefs", { signal: AbortSignal.timeout(20000) });
+        } catch (err) {
+          return json({ error: "cods unreachable: " + String((err && err.message) || err) }, 502);
+        }
+        if (!res.ok) return json({ error: "cods prefs HTTP " + res.status }, 502);
+        const d = await res.json().catch(() => ({}));
+        let added = 0;
+        for (const x of (Array.isArray(d.learned) ? d.learned : [])) {
+          if (!x || !x.q || !x.a) continue;
+          if (ledger.rows.some((r) => r && String(r.q || "") === String(x.q))) continue;
+          ledger.rows.push({
+            id: "lr_" + crypto.randomUUID(),
+            q: String(x.q).slice(0, 120), a: String(x.a).slice(0, 400),
+            prompt: String(x.prompt || "").slice(0, 160), source: "cods", tool: "cods",
+            tier: /^(set|renamed) by him/i.test(String(x.prompt || "")) ? "his" : "learned",
+            status: x.status === "candidate" ? "candidate" : "active",
+            kept: !!x.kept, hits: Number(x.hits) || 0, at: String(x.at || now)
+          });
+          added += 1;
+        }
+        const doms = d.domainRules && typeof d.domainRules === "object" ? d.domainRules : {};
+        for (const k of Object.keys(doms)) {
+          const list = Array.isArray(doms[k]) ? doms[k] : [];
+          ledger.domains[k] = Array.isArray(ledger.domains[k]) ? ledger.domains[k] : [];
+          for (const r of list) {
+            const text = String((r && r.text) || "").slice(0, 300);
+            if (!text) continue;
+            if (ledger.domains[k].some((y) => y && y.text === text)) continue;
+            ledger.domains[k].push({ text: text, at: String((r && r.at) || now), tool: "cods", eg: Array.isArray(r && r.eg) ? r.eg.slice(0, 3) : [] });
+            added += 1;
+          }
+        }
+        out.seeded = added;
+      } else {
+        return json({ error: "unknown action" }, 400);
+      }
+
+      ledger.events.push({ at: now, action: act, tool: tool, q: q.slice(0, 80) });
+      await saveLedger(this, ledger);
+      out.counts = learnCounts(ledger);
+      out.at = now;
+      return json(out);
     }
     if (url.pathname === "/api/watch" && (request.method === "GET" || request.method === "PUT")) {
       // Gated and fail-closed: an unset key closes this, it never opens it.
