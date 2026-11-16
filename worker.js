@@ -5498,8 +5498,8 @@ ${principleList}` },
           },
           {
             title: "Same key, every copy",
-            sub: "one upstream value, each Worker holds its own copy \u2014 rotate last",
-            cmd: "python3 -c \"import secrets;print(secrets.token_urlsafe(32))\" | npx wrangler@4 secret put OPENROUTER_API_KEY --name ai-proxy",
+            sub: "one value from the provider, never generated here \u2014 rotate last, after the new one works",
+            cmd: "IFS= read -rs KEY; printf '%s' \"$KEY\" | npx wrangler@4 secret put OPENROUTER_API_KEY --name tew   # paste the provider's new key, then repeat per Worker",
             rows: [
               { k: "OPENROUTER_API_KEY", where: "tew ara mind cods ai-proxy orproxy pi-harness-example" },
               { k: "CLOUDFLARE_API_TOKEN", where: "ara mind cods pi-harness-example + the copy you deploy with" }
