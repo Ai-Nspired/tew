@@ -1919,7 +1919,7 @@ var INDEX_HTML = `<!DOCTYPE html>
     function resolveAddress(raw) {
       const value = String(raw || '').trim();
       if (!value) return '';
-      if (/^https?:\/\//i.test(value)) return value;
+      if (/^https?:\\/\\//i.test(value)) return value;
       if (value.indexOf(' ') === -1 && value.indexOf('.') !== -1) return 'https://' + value;
       if (BARE_NAME.test(value)) return 'https://' + value + '.ai-n.workers.dev';
       return 'https://' + value;
