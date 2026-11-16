@@ -2253,6 +2253,31 @@
       };
       return line;
     }
+    function keysPlan(d) {
+      const box = document.getElementById('keysRows');
+      if (!box) return;
+      (d.plan || []).forEach(function (g) {
+        const head = document.createElement('div');
+        head.style.cssText = 'margin-top:14px;padding:6px 8px;background:var(--canvas);border-left:2px solid var(--accent);font-size:12px;font-weight:600;color:var(--text)';
+        head.textContent = g.title;
+        box.appendChild(head);
+        if (g.sub) box.appendChild(keysLine(g.sub, 'var(--muted)'));
+        (g.rows || []).forEach(function (r) {
+          const row = document.createElement('div');
+          row.style.cssText = 'padding:3px 0 3px 8px;font-size:11px;color:#e6f2ff';
+          const k = document.createElement('span');
+          k.style.cssText = 'font-family:var(--mono);color:#8fd0ff';
+          k.textContent = r.k;
+          const where = document.createElement('span');
+          where.style.cssText = 'color:#8fa6bd';
+          where.textContent = '  ' + r.where;
+          row.appendChild(k); row.appendChild(where);
+          box.appendChild(row);
+          if (r.cmd) box.appendChild(keysCmd(r.cmd));
+        });
+        if (g.cmd) box.appendChild(keysCmd(g.cmd));
+      });
+    }
     function renderKeys(d) {
       const box = document.getElementById('keysRows');
       if (!box) return;
@@ -2294,14 +2319,8 @@
         d.services.forEach(function (s) { box.appendChild(keysLine(s.service + ' \u2014 ' + s.secrets.join(', '), '#5b7288')); });
       }
 
-      if ((d.rotate || []).length) {
-        box.appendChild(keysLine('rotate manually', 'var(--muted)', 'tag'));
-        d.rotate.forEach(function (r) {
-          box.appendChild(keysLine(r.step + '. ' + r.title + ' \u2014 ' + r.targets.join(', '), '#8fa6bd'));
-          if (r.cmd) box.appendChild(keysCmd(r.cmd));
-          if (r.alone) box.appendChild(keysLine('alone: ' + r.alone, '#5b7288'));
-        });
-      }
+      keysPlan(d);
+
       if (d.at) box.appendChild(keysLine('checked ' + d.at, '#5b7288'));
     }
     async function loadLearned() {
