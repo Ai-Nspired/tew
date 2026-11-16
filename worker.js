@@ -2800,7 +2800,13 @@ var INDEX_HTML = `<!DOCTYPE html>
     // Every section folds, and every section copies as one block, so the panel can be
     // handed to another agent without transcribing it by hand.
     function wtCollapsed() {
-      try { return JSON.parse(localStorage.getItem('tew_wt_collapsed') || '{}') || {}; } catch (e) { return {}; }
+      // Open quiet: the tools list starts folded and everything else open, until you
+      // toggle something. localStorage is per browser, so each device keeps its own.
+      try {
+        const raw = localStorage.getItem('tew_wt_collapsed');
+        if (!raw) return { tools: true };
+        return JSON.parse(raw) || {};
+      } catch (e) { return { tools: true }; }
     }
     function wtSaveCollapsed(state) {
       try { localStorage.setItem('tew_wt_collapsed', JSON.stringify(state)); } catch (e) {}
@@ -2870,7 +2876,8 @@ var INDEX_HTML = `<!DOCTYPE html>
           '<button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button>',
           '<div id="learnRows" style="color:var(--muted)">not loaded</div>') +
         wtSect('deciders', 'Deciders',
-          '<button class="ctrl-btn" id="decideProbe" style="height:22px;font-size:10px;padding:0 6px">probe</button>',
+          '<button class="ctrl-btn" id="decideProbe" style="height:22px;font-size:10px;padding:0 6px">probe</button> ' +
+          '<button class="ctrl-btn" id="decideJson" style="height:22px;font-size:10px;padding:0 6px">json</button>',
           '<div style="display:flex;gap:4px;margin-top:2px"><input id="decideText" placeholder="the ask to compare on" style="flex:1;min-width:0;height:24px;font-size:11px;background:var(--canvas);border:1px solid var(--border);color:var(--text);padding:0 6px;border-radius:3px"><button class="ctrl-btn" id="decideGo" style="height:24px;font-size:10px;padding:0 8px">run</button></div><div id="decideRows" style="color:var(--muted);margin-top:6px">not loaded</div><div id="decideFoot" style="font-size:10px;color:var(--dim);margin-top:4px"></div><div id="decideTraffic" style="margin-top:8px"></div>') +
         wtSect('keys', 'Keys',
           '<button class="ctrl-btn" id="keysCheck" style="height:22px;font-size:10px;padding:0 6px">check</button>',
@@ -2884,6 +2891,7 @@ var INDEX_HTML = `<!DOCTYPE html>
       el.querySelector('#learnForget').onclick = function () { learnForget(); };
       el.querySelector('#learnSeed').onclick = function () { learnSeed(); };
       el.querySelector('#decideProbe').onclick = function () { probeDeciders(); };
+      el.querySelector('#decideJson').onclick = function () { wtCopyDecidersJson(); };
       el.querySelector('#decideGo').onclick = function () { probeDeciders(); };
       el.querySelector('#keysCheck').onclick = function () { loadKeys(); };
       el.addEventListener('click', function (e) {
@@ -3259,6 +3267,7 @@ var INDEX_HTML = `<!DOCTYPE html>
       foot.textContent = b ? ('probes this hour: ' + (b.used || 0) + ' of ' + (b.limit || 0) + ' \u00b7 ' + (b.hour || '') + ':00Z') : '';
     }
     function renderDecided(d) {
+      lastDecide = d;
       const box = document.getElementById('decideRows');
       if (!box) return;
       box.innerHTML = '';
@@ -3324,6 +3333,39 @@ var INDEX_HTML = `<!DOCTYPE html>
       }
       renderDecideBudget(d.budget);
       renderTraffic(d.traffic);
+    }
+    // The probe results as data, for another agent or a spreadsheet. Renders from the
+    // same payload the rows come from; if nothing has been probed this session it asks
+    // for the current state first rather than exporting an empty object.
+    let lastDecide = null;
+    async function wtCopyDecidersJson() {
+      const copy = function (text) {
+        const ok = function () { showToast('decider JSON copied', 'success'); };
+        const bad = function () { showToast('copy failed', 'warning'); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, bad);
+        else {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.cssText = 'position:fixed;left:-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand('copy') ? ok() : bad(); } catch (e) { bad(); }
+          ta.remove();
+        }
+      };
+      if (!lastDecide) {
+        const key = watchKey();
+        if (!key) return;
+        try {
+          const res = await fetch(API('/decide'), { headers: { 'x-admin-key': key } });
+          if (!res.ok) { showToast('nothing to export yet', 'warning'); return; }
+          lastDecide = await res.json();
+        } catch (e) {
+          showToast('export failed: ' + e.message, 'warning');
+          return;
+        }
+      }
+      copy(JSON.stringify(lastDecide, null, 2));
     }
     async function probeDeciders() {
       const input = document.getElementById('decideText');
