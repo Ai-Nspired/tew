@@ -204,6 +204,7 @@
       <button class="ctrl-btn" onclick="promptQuery()" style="border-color:#1a2a4a;color:#4a9fff;">🔎 Query</button>
       <button class="ctrl-btn" onclick="promptAudit()" style="border-color:#4a1a2a;color:#ff4a6a;">🔍 Audit</button>
       <button class="ctrl-btn" onclick="promptCompare()" style="border-color:#1a3a3a;color:#4ad0c8;">⇄ Compare</button>
+      <button class="ctrl-btn" onclick="openWatchtower()" style="border-color:#1a3a3a;color:#4ad0c8;">🛰 Watchtower</button>
       <button class="ctrl-btn" onclick="openTabList('eitl')" style="border-color:#2a1a4a;color:#c84aff;">⚙ EITL</button>
       <button class="ctrl-btn" onclick="promptDomain()" style="border-color:#2a2a1a;color:#c8c84a;">🌍 Domain</button>
       <button class="ctrl-btn" onclick="openNSM()" style="border-color:#1a3a2a;color:#4affa0;">🧠 NSM</button>
@@ -2063,6 +2064,97 @@
     }
 
     // ── Truth-Audit ──
+    function watchKey() {
+      let key = sessionStorage.getItem('tew_admin_key') || '';
+      if (!key) {
+        key = window.prompt('ADMIN_KEY for the watchtower');
+        if (key) sessionStorage.setItem('tew_admin_key', key);
+      }
+      return key || '';
+    }
+    function watchPanel() {
+      let el = document.getElementById('watchtower');
+      if (el) return el;
+      el = document.createElement('div');
+      el.id = 'watchtower';
+      el.style.cssText = 'position:fixed;top:56px;right:18px;width:480px;max-height:70vh;overflow:auto;background:#0d1420;border:1px solid #1a3a3a;border-radius:8px;padding:12px;z-index:9999;font:12px/1.6 ui-monospace,monospace;color:#cfe;box-shadow:0 10px 30px rgba(0,0,0,.6);display:none';
+      el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">' +
+        '<strong style="color:#4ad0c8">Watchtower</strong>' +
+        '<span><button class="ctrl-btn" id="watchAdd" style="font-size:10px;padding:2px 8px">+ tool</button> ' +
+        '<button class="ctrl-btn" id="watchRefresh" style="font-size:10px;padding:2px 8px">refresh</button> ' +
+        '<button class="ctrl-btn" id="watchClose" style="font-size:10px;padding:2px 8px">close</button></span>' +
+        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>';
+      document.body.appendChild(el);
+      el.querySelector('#watchClose').onclick = function () { el.style.display = 'none'; };
+      el.querySelector('#watchRefresh').onclick = function () { refreshWatchtower(); };
+      el.querySelector('#watchAdd').onclick = function () { addWatchTool(); };
+      return el;
+    }
+    async function openWatchtower() {
+      watchPanel().style.display = 'block';
+      await refreshWatchtower();
+    }
+    async function refreshWatchtower() {
+      const rows = watchPanel().querySelector('#watchRows');
+      const key = watchKey();
+      if (!key) return;
+      rows.textContent = 'checking every tool...';
+      try {
+        const res = await fetch(API('/watch'), { headers: { 'x-admin-key': key } });
+        const d = await res.json();
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 503) sessionStorage.removeItem('tew_admin_key');
+          rows.textContent = d.message || d.error || 'watch failed';
+          return;
+        }
+        rows.innerHTML = '';
+        const tools = d.tools || [];
+        tools.forEach(function (t) {
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #16202e';
+          const dot = document.createElement('span');
+          dot.textContent = t.ok ? '\u25cf' : '\u25cb';
+          dot.style.color = t.ok ? '#4ad0c8' : '#ff4a6a';
+          const name = document.createElement('span');
+          name.textContent = t.name;
+          name.style.cssText = 'width:56px;color:#e6f2ff';
+          const meta = document.createElement('span');
+          meta.textContent = (t.status || 0) + ' \u00b7 ' + (t.ms == null ? '-' : t.ms + 'ms') + (t.detail ? ' \u00b7 ' + t.detail : '');
+          meta.style.cssText = 'flex:1;color:#8fa6bd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+          meta.title = (t.base || '') + (t.path || '');
+          row.appendChild(dot); row.appendChild(name); row.appendChild(meta);
+          rows.appendChild(row);
+        });
+        const foot = document.createElement('div');
+        foot.style.cssText = 'margin-top:8px;color:#5b7288';
+        const up = tools.filter(function (t) { return t.ok; }).length;
+        foot.textContent = 'checked ' + (d.at || '') + ' \u00b7 ' + up + ' of ' + tools.length + ' answering';
+        rows.appendChild(foot);
+      } catch (e) {
+        rows.textContent = 'watch error: ' + e.message;
+      }
+    }
+    async function addWatchTool() {
+      const name = window.prompt('tool name');
+      if (!name) return;
+      const base = window.prompt('tool base url, e.g. https://mind.ai-n.workers.dev');
+      if (!base) return;
+      const path = window.prompt('health path', '/health') || '/health';
+      const key = watchKey();
+      if (!key) return;
+      try {
+        const listRes = await fetch(API('/watch'), { headers: { 'x-admin-key': key } });
+        const listDoc = await listRes.json();
+        const tools = (listDoc.tools || []).map(function (t) { return { name: t.name, base: t.base, path: t.path }; });
+        tools.push({ name: name, base: base.replace(/\/$/, ''), path: path });
+        const res = await fetch(API('/watch'), { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-admin-key': key }, body: JSON.stringify({ tools: tools }) });
+        if (!res.ok) { showToast('Could not save: ' + res.status, 'error'); return; }
+        showToast('Watching ' + name, 'success');
+        await refreshWatchtower();
+      } catch (e) {
+        showToast('watch error: ' + e.message, 'error');
+      }
+    }
     async function promptCompare() {
       const ask = window.prompt('Compare which ask? (cods vs mind)');
       if (!ask) return;

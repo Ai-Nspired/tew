@@ -774,6 +774,7 @@ var INDEX_HTML = `<!DOCTYPE html>
       <button class="ctrl-btn" onclick="promptQuery()" style="border-color:#1a2a4a;color:#4a9fff;">🔎 Query</button>
       <button class="ctrl-btn" onclick="promptAudit()" style="border-color:#4a1a2a;color:#ff4a6a;">🔍 Audit</button>
       <button class="ctrl-btn" onclick="promptCompare()" style="border-color:#1a3a3a;color:#4ad0c8;">⇄ Compare</button>
+      <button class="ctrl-btn" onclick="openWatchtower()" style="border-color:#1a3a3a;color:#4ad0c8;">🛰 Watchtower</button>
       <button class="ctrl-btn" onclick="openTabList('eitl')" style="border-color:#2a1a4a;color:#c84aff;">⚙ EITL</button>
       <button class="ctrl-btn" onclick="promptDomain()" style="border-color:#2a2a1a;color:#c8c84a;">🌍 Domain</button>
       <button class="ctrl-btn" onclick="openNSM()" style="border-color:#1a3a2a;color:#4affa0;">🧠 NSM</button>
@@ -2633,6 +2634,97 @@ var INDEX_HTML = `<!DOCTYPE html>
     }
 
     // ── Truth-Audit ──
+    function watchKey() {
+      let key = sessionStorage.getItem('tew_admin_key') || '';
+      if (!key) {
+        key = window.prompt('ADMIN_KEY for the watchtower');
+        if (key) sessionStorage.setItem('tew_admin_key', key);
+      }
+      return key || '';
+    }
+    function watchPanel() {
+      let el = document.getElementById('watchtower');
+      if (el) return el;
+      el = document.createElement('div');
+      el.id = 'watchtower';
+      el.style.cssText = 'position:fixed;top:56px;right:18px;width:480px;max-height:70vh;overflow:auto;background:#0d1420;border:1px solid #1a3a3a;border-radius:8px;padding:12px;z-index:9999;font:12px/1.6 ui-monospace,monospace;color:#cfe;box-shadow:0 10px 30px rgba(0,0,0,.6);display:none';
+      el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">' +
+        '<strong style="color:#4ad0c8">Watchtower</strong>' +
+        '<span><button class="ctrl-btn" id="watchAdd" style="font-size:10px;padding:2px 8px">+ tool</button> ' +
+        '<button class="ctrl-btn" id="watchRefresh" style="font-size:10px;padding:2px 8px">refresh</button> ' +
+        '<button class="ctrl-btn" id="watchClose" style="font-size:10px;padding:2px 8px">close</button></span>' +
+        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>';
+      document.body.appendChild(el);
+      el.querySelector('#watchClose').onclick = function () { el.style.display = 'none'; };
+      el.querySelector('#watchRefresh').onclick = function () { refreshWatchtower(); };
+      el.querySelector('#watchAdd').onclick = function () { addWatchTool(); };
+      return el;
+    }
+    async function openWatchtower() {
+      watchPanel().style.display = 'block';
+      await refreshWatchtower();
+    }
+    async function refreshWatchtower() {
+      const rows = watchPanel().querySelector('#watchRows');
+      const key = watchKey();
+      if (!key) return;
+      rows.textContent = 'checking every tool...';
+      try {
+        const res = await fetch(API('/watch'), { headers: { 'x-admin-key': key } });
+        const d = await res.json();
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 503) sessionStorage.removeItem('tew_admin_key');
+          rows.textContent = d.message || d.error || 'watch failed';
+          return;
+        }
+        rows.innerHTML = '';
+        const tools = d.tools || [];
+        tools.forEach(function (t) {
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #16202e';
+          const dot = document.createElement('span');
+          dot.textContent = t.ok ? '\u25cf' : '\u25cb';
+          dot.style.color = t.ok ? '#4ad0c8' : '#ff4a6a';
+          const name = document.createElement('span');
+          name.textContent = t.name;
+          name.style.cssText = 'width:56px;color:#e6f2ff';
+          const meta = document.createElement('span');
+          meta.textContent = (t.status || 0) + ' \u00b7 ' + (t.ms == null ? '-' : t.ms + 'ms') + (t.detail ? ' \u00b7 ' + t.detail : '');
+          meta.style.cssText = 'flex:1;color:#8fa6bd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+          meta.title = (t.base || '') + (t.path || '');
+          row.appendChild(dot); row.appendChild(name); row.appendChild(meta);
+          rows.appendChild(row);
+        });
+        const foot = document.createElement('div');
+        foot.style.cssText = 'margin-top:8px;color:#5b7288';
+        const up = tools.filter(function (t) { return t.ok; }).length;
+        foot.textContent = 'checked ' + (d.at || '') + ' \u00b7 ' + up + ' of ' + tools.length + ' answering';
+        rows.appendChild(foot);
+      } catch (e) {
+        rows.textContent = 'watch error: ' + e.message;
+      }
+    }
+    async function addWatchTool() {
+      const name = window.prompt('tool name');
+      if (!name) return;
+      const base = window.prompt('tool base url, e.g. https://mind.ai-n.workers.dev');
+      if (!base) return;
+      const path = window.prompt('health path', '/health') || '/health';
+      const key = watchKey();
+      if (!key) return;
+      try {
+        const listRes = await fetch(API('/watch'), { headers: { 'x-admin-key': key } });
+        const listDoc = await listRes.json();
+        const tools = (listDoc.tools || []).map(function (t) { return { name: t.name, base: t.base, path: t.path }; });
+        tools.push({ name: name, base: base.replace(/\/$/, ''), path: path });
+        const res = await fetch(API('/watch'), { method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-admin-key': key }, body: JSON.stringify({ tools: tools }) });
+        if (!res.ok) { showToast('Could not save: ' + res.status, 'error'); return; }
+        showToast('Watching ' + name, 'success');
+        await refreshWatchtower();
+      } catch (e) {
+        showToast('watch error: ' + e.message, 'error');
+      }
+    }
     async function promptCompare() {
       const ask = window.prompt('Compare which ask? (cods vs mind)');
       if (!ask) return;
@@ -3447,6 +3539,61 @@ async function searxSearch(env, query) {
     throw error;
   }
 }
+// The watchtower reads each tool from here, never from the browser: mind and
+// truth send no CORS headers, so a page cannot read them directly.
+var WATCH_DEFAULTS = [
+  { name: "tew", base: "https://tew.ai-n.workers.dev", path: "/health" },
+  { name: "cods", base: "https://cods.ai-n.workers.dev", path: "/health" },
+  { name: "truth", base: "https://truth.ai-n.workers.dev", path: "/debug/kv-status" },
+  { name: "mind", base: "https://mind.ai-n.workers.dev", path: "/" },
+  { name: "ara", base: "https://ara.ai-n.workers.dev", path: "/health" }
+];
+function adminGate(env, request) {
+  const want = String((env && env.ADMIN_KEY) || "").trim();
+  if (!want) {
+    return json({ error: "admin_not_configured", message: "Set ADMIN_KEY on this Worker." }, 503);
+  }
+  const given = String(request.headers.get("x-admin-key") || "").trim();
+  let drift = given.length ^ want.length;
+  for (let i = 0; i < Math.max(given.length, want.length); i++) {
+    drift |= (given.charCodeAt(i) || 0) ^ (want.charCodeAt(i) || 0);
+  }
+  return drift === 0 ? null : json({ error: "admin_key_required", message: "Send ADMIN_KEY in x-admin-key." }, 401);
+}
+function watchDetail(parsed, text) {
+  if (parsed && typeof parsed === "object") {
+    const bits = [];
+    if (parsed.status) bits.push(String(parsed.status));
+    if (parsed.worker) bits.push(String(parsed.worker));
+    if (parsed.version) bits.push(String(parsed.version));
+    if (parsed.proxyBound !== void 0) bits.push(parsed.proxyBound ? "proxy bound" : "proxy unbound");
+    if (parsed.error) bits.push(String(parsed.error));
+    if (bits.length) return bits.join(" \u00b7 ");
+  }
+  const flat = String(text || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return flat ? flat.slice(0, 60) : null;
+}
+async function probeTool(tool) {
+  const started = Date.now();
+  const base = String((tool && (tool.base || tool.url)) || "").replace(/\/$/, "");
+  const path = String((tool && tool.path) || "/health");
+  const row = { name: (tool && tool.name) || base, base: base, path: path };
+  try {
+    const res = await fetch(base + path, { method: "GET", signal: AbortSignal.timeout(10000) });
+    const kind = String(res.headers.get("content-type") || "");
+    const text = await res.text().catch(() => "");
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch (err) { parsed = null; }
+    // A tool with no health route still answers; say that instead of scraping its page.
+    const detail = parsed === null && /html/i.test(kind)
+      ? (res.ok ? "answers \u00b7 no health route" : "status " + res.status)
+      : watchDetail(parsed, text);
+    return Object.assign(row, { ok: res.ok, status: res.status, ms: Date.now() - started, detail: detail, checkedAt: (new Date()).toISOString() });
+  } catch (err) {
+    return Object.assign(row, { ok: false, status: 0, ms: Date.now() - started, detail: "unreachable: " + String((err && err.message) || err), checkedAt: (new Date()).toISOString() });
+  }
+}
+
 var Workspace = class extends DurableObject {
   cards = null;
   principles = null;
@@ -4119,18 +4266,34 @@ ${principleList}` },
       this.broadcast({ type: "card_created", card: queryCard });
       return json({ ...queryResult, card: queryCard });
     }
+    if (url.pathname === "/api/watch" && (request.method === "GET" || request.method === "PUT")) {
+      // Gated and fail-closed: an unset key closes this, it never opens it.
+      const denied = adminGate(this.env, request);
+      if (denied) return denied;
+      if (request.method === "PUT") {
+        const body = await request.json().catch(() => ({}));
+        const list = Array.isArray(body.tools) ? body.tools : null;
+        if (!list) return json({ error: "tools must be an array" }, 400);
+        const clean = [];
+        for (const t of list) {
+          const name = String((t && t.name) || "").trim();
+          const base = String((t && (t.base || t.url)) || "").trim().replace(/\/$/, "");
+          const path = String((t && t.path) || "/health").trim();
+          if (!name || !/^https:\/\//.test(base)) return json({ error: "each tool needs a name and an https base" }, 400);
+          clean.push({ name: name, base: base, path: path });
+        }
+        await this.ctx.storage.put("WATCH:tools", clean);
+        return json({ saved: clean.length, tools: clean });
+      }
+      const saved = await this.ctx.storage.get("WATCH:tools");
+      const tools = Array.isArray(saved) && saved.length ? saved : WATCH_DEFAULTS;
+      const probed = await Promise.all(tools.map((t) => probeTool(t)));
+      return json({ at: (new Date()).toISOString(), tools: probed });
+    }
     if (url.pathname === "/api/compare" && request.method === "POST") {
       // Gated: an unset key closes this, it never opens it.
-      const want = String((this.env && this.env.ADMIN_KEY) || "").trim();
-      if (!want) {
-        return json({ error: "admin_not_configured", message: "Set ADMIN_KEY on this Worker before comparing." }, 503);
-      }
-      const given = String(request.headers.get("x-admin-key") || "").trim();
-      let drift = given.length ^ want.length;
-      for (let i = 0; i < Math.max(given.length, want.length); i++) {
-        drift |= (given.charCodeAt(i) || 0) ^ (want.charCodeAt(i) || 0);
-      }
-      if (drift !== 0) return json({ error: "admin_key_required", message: "Send ADMIN_KEY in x-admin-key." }, 401);
+      const denied = adminGate(this.env, request);
+      if (denied) return denied;
 
       const body = await request.json().catch(() => ({}));
       const ask = String(body.ask || body.query || "").trim();
