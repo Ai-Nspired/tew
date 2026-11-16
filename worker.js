@@ -5280,7 +5280,7 @@ ${principleList}` },
       }
       const checks = await Promise.all([
         keyCheck.call(this, "ADMIN_KEY", "tew /api/watch", selfOrigin + "/api/watch", "x-admin-key", 200),
-        keyCheck.call(this, "ARA_KEY", "ara /api/recent", "https://ara.ai-n.workers.dev/api/recent", "x-admin-key", 200),
+        keyCheck.call(this, "ARA_KEY", "ara /recent", "https://ara.ai-n.workers.dev/recent", "x-admin-key", 200),
         keyCheck.call(this, "LEARN_KEY", "tew /api/learn", selfOrigin + "/api/learn", "x-learn-key", 200)
       ]);
       return json({
@@ -5291,12 +5291,8 @@ ${principleList}` },
           { need: "tew:LEARN_KEY = mind:LEARN_KEY", why: "the shared ladder's read key — mind's is unset, so its ladder read is inert until it is created" }
         ],
         orphans: [
-          { service: "cods", names: ["ADMIN_KEY", "KEY", "CLOUDFLARE_API_TOKEN"], why: "no env.ADMIN_KEY, env.KEY or token read exists anywhere in cods' source" },
-          { service: "mind", names: ["KEY"], why: "mind's ADMIN_KEY gates the console; KEY has no reader" }
         ],
         misnamed: [
-          { service: "ara", name: "CLOUDFLARE _API_KEY", why: "the space makes it unreachable as env.CLOUDFLARE_API_KEY" },
-          { service: "pi-harness-example", name: "SEARING_URL2", why: "reads like SEARCH_URL typed wrong" }
         ],
         spend: {
           openrouter_on_tew: String((this.env && this.env.OPENROUTER_API_KEY) || "").length > 0,
@@ -5304,13 +5300,13 @@ ${principleList}` },
         },
         services: [
           { service: "tew", secrets: ["ADMIN_KEY", "LEARN_KEY", "ARA_KEY"], reads: "sheet · x-learn-key on /api/learn · x-admin-key out to ARA" },
-          { service: "ara", secrets: ["ADMIN_KEY", "OPENROUTER_API_KEY", "CLOUDFLARE_ID", "CLOUDFLARE _API_KEY"], reads: "gate on /feedback /outcome /recent and POST /domains · decider spend" },
-          { service: "mind", secrets: ["ADMIN_KEY", "ARA_KEY", "CLOUDFLARE_API_TOKEN", "KEY", "OPENROUTER_API_KEY"], reads: "console gate · writes to ARA · LEARN_KEY missing" },
-          { service: "cods", secrets: ["ADMIN_KEY", "KEY", "CLOUDFLARE_API_TOKEN", "OPENROUTER_API_KEY"], reads: "model calls" },
+          { service: "ara", secrets: ["ADMIN_KEY", "OPENROUTER_API_KEY", "CLOUDFLARE_ID"], reads: "gate on /feedback /outcome /recent and POST /domains \u00b7 decider spend" },
+          { service: "mind", secrets: ["ADMIN_KEY", "ARA_KEY", "CLOUDFLARE_API_TOKEN", "OPENROUTER_API_KEY"], reads: "console gate \u00b7 writes to ARA \u00b7 LEARN_KEY missing" },
+          { service: "cods", secrets: ["OPENROUTER_API_KEY"], reads: "model calls" },
           { service: "truth", secrets: ["ADMIN_KEY"], reads: "write and ops paths; TEW does not hold this key" },
           { service: "ai-proxy", secrets: ["OPENROUTER_API_KEY"], reads: "upstream spend" },
           { service: "orproxy", secrets: ["ADMIN_SECRET", "OPENROUTER_API_KEY"], reads: "proxy gate and upstream spend" },
-          { service: "pi-harness-example", secrets: ["CLOUDFLARE_API_TOKEN", "OPENROUTER_API_KEY", "SEARING_URL2"], reads: "harness generation" }
+          { service: "pi-harness-example", secrets: ["CLOUDFLARE_API_TOKEN", "OPENROUTER_API_KEY"], reads: "harness generation" }
         ],
         // Three buckets, not seven steps: a key that is shared and must change
         // together, a key a Worker owns alone, and a service key that exists as a
@@ -5348,17 +5344,6 @@ ${principleList}` },
             rows: [
               { k: "OPENROUTER_API_KEY", where: "tew ara mind cods ai-proxy orproxy pi-harness-example" },
               { k: "CLOUDFLARE_API_TOKEN", where: "ara mind cods pi-harness-example + the copy you deploy with" }
-            ]
-          },
-          {
-            title: "Delete \u2014 nothing reads these",
-            sub: "not rotation candidates: surface with no owner",
-            cmd: "npx wrangler@4 secret delete KEY --name cods",
-            rows: [
-              { k: "cods", where: "ADMIN_KEY \u00b7 KEY \u00b7 CLOUDFLARE_API_TOKEN" },
-              { k: "mind", where: "KEY" },
-              { k: "ara", where: "CLOUDFLARE _API_KEY (misnamed)" },
-              { k: "pi-harness", where: "SEARING_URL2 (misnamed)" }
             ]
           }
         ]
