@@ -2728,7 +2728,7 @@ var INDEX_HTML = `<!DOCTYPE html>
         '<span><button class="ctrl-btn" id="watchAdd" style="font-size:10px;padding:2px 8px">+ tool</button> ' +
         '<button class="ctrl-btn" id="watchRefresh" style="font-size:10px;padding:2px 8px">refresh</button> ' +
         '<button class="ctrl-btn" id="watchClose" style="font-size:10px;padding:2px 8px">close</button></span>' +
-        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div><div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">Deciders</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="decideProbe" style="height:22px;font-size:10px;padding:0 6px">probe</button></span></div><div style="display:flex;gap:4px;margin-top:6px"><input id="decideText" placeholder="the ask to compare on" style="flex:1;min-width:0;height:24px;font-size:11px;background:var(--canvas);border:1px solid var(--border);color:var(--text);padding:0 6px;border-radius:3px"><button class="ctrl-btn" id="decideGo" style="height:24px;font-size:10px;padding:0 8px">run</button></div><div id="decideRows" style="color:var(--muted);margin-top:6px">not loaded</div><div id="decideFoot" style="font-size:10px;color:var(--dim);margin-top:4px"></div>';
+        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div><div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">Deciders</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="decideProbe" style="height:22px;font-size:10px;padding:0 6px">probe</button></span></div><div style="display:flex;gap:4px;margin-top:6px"><input id="decideText" placeholder="the ask to compare on" style="flex:1;min-width:0;height:24px;font-size:11px;background:var(--canvas);border:1px solid var(--border);color:var(--text);padding:0 6px;border-radius:3px"><button class="ctrl-btn" id="decideGo" style="height:24px;font-size:10px;padding:0 8px">run</button></div><div id="decideRows" style="color:var(--muted);margin-top:6px">not loaded</div><div id="decideFoot" style="font-size:10px;color:var(--dim);margin-top:4px"></div><div id="decideTraffic" style="margin-top:8px"></div>';
       document.body.appendChild(el);
       el.querySelector('#watchClose').onclick = function () { el.style.display = 'none'; };
       el.querySelector('#watchRefresh').onclick = function () { refreshWatchtower(); };
@@ -2914,6 +2914,24 @@ var INDEX_HTML = `<!DOCTYPE html>
       if (n === null || n === undefined) return '-';
       return '$' + ((n * 1000000).toFixed(2)) + '/M';
     }
+    function renderTraffic(t) {
+      const box = document.getElementById('decideTraffic');
+      if (!box) return;
+      box.innerHTML = '';
+      if (!t) return;
+      if (!t.ok) { box.textContent = 'recorded traffic unavailable: ' + (t.error || 'unknown'); return; }
+      const head = document.createElement('div');
+      head.style.cssText = 'font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:3px';
+      head.textContent = 'Recorded · last ' + (t.total || 0) + ' decisions in ARA';
+      box.appendChild(head);
+      (t.models || []).forEach(function (m) {
+        const line = document.createElement('div');
+        line.style.cssText = 'font-size:10px;color:var(--muted);line-height:1.5';
+        line.textContent = m.model + ' \u00b7 ' + m.n + ' \u00b7 med ' + (m.msMedian == null ? '-' : m.msMedian + 'ms') + ' \u00b7 ' + decideCost(m.cost);
+        box.appendChild(line);
+      });
+      if (!(t.models || []).length) box.appendChild(document.createTextNode('no rows yet'));
+    }
     function renderDecideBudget(b) {
       const foot = document.getElementById('decideFoot');
       if (!foot) return;
@@ -2930,6 +2948,7 @@ var INDEX_HTML = `<!DOCTYPE html>
           ? ('adopted: ' + adopted.model + ' \u00b7 ' + (adopted.at || ''))
           : 'Nothing adopted. Type an ask and probe to compare them.';
         renderDecideBudget(d.budget);
+        renderTraffic(d.traffic);
         return;
       }
       results.forEach(function (r) {
@@ -2975,6 +2994,7 @@ var INDEX_HTML = `<!DOCTYPE html>
         box.appendChild(row);
       });
       renderDecideBudget(d.budget);
+      renderTraffic(d.traffic);
     }
     async function probeDeciders() {
       const input = document.getElementById('decideText');
@@ -4088,6 +4108,45 @@ function decideQuestions() {
     }
   };
 }
+// What the decider has actually done, read from ARA's own rows. A probe shows
+// what each model would do with one ask; this shows what the one in use has been
+// doing, priced the same way.
+async function araTraffic(limit) {
+  const take = Math.max(1, Math.min(60, Number(limit) || 30));
+  try {
+    const res = await fetch("https://ara.ai-n.workers.dev/recent?limit=" + take, {
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!res.ok) return { ok: false, error: "http " + res.status, models: [], rows: [] };
+    const data = await res.json().catch(function () { return null; });
+    const rows = (data && data.decisions) || [];
+    const by = {};
+    rows.forEach(function (r) {
+      const name = r.model || "no decider";
+      const slot = by[name] || (by[name] = { model: name, n: 0, ms: [], cost: 0 });
+      slot.n += 1;
+      if (typeof r.ms === "number") slot.ms.push(r.ms);
+      if (typeof r.cost === "number") slot.cost += r.cost;
+    });
+    const models = Object.keys(by).map(function (k) {
+      const slot = by[k];
+      const sorted = slot.ms.slice().sort(function (a, b) { return a - b; });
+      return {
+        model: slot.model,
+        n: slot.n,
+        msMedian: sorted.length ? sorted[Math.floor(sorted.length / 2)] : null,
+        cost: Math.round(slot.cost * 1000000) / 1000000
+      };
+    }).sort(function (a, b) { return b.n - a.n; });
+    return { ok: true, models: models, rows: rows.slice(0, 6).map(function (r) {
+      return { at: r.at, asked: String(r.asked || "").slice(0, 80), decided: r.decided, model: r.model || null,
+               cost: typeof r.cost === "number" ? r.cost : null, ms: typeof r.ms === "number" ? r.ms : null };
+    }), total: rows.length };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err), models: [], rows: [] };
+  }
+}
+
 // The proxy is the transport: orproxy forwards to ai-proxy, which holds the key
 // and returns usage.cost. TEW never needs the OpenRouter key of its own.
 async function runDecider(env, model, ask) {
@@ -4811,7 +4870,7 @@ ${principleList}` },
       const cap = { used: budget.count || 0, limit: DECIDE_PER_HOUR, hour: hour };
 
       if (request.method === "GET") {
-        return json({ at: now.toISOString(), models: DECIDE_MODELS, adopted: adopted, budget: cap });
+        return json({ at: now.toISOString(), models: DECIDE_MODELS, adopted: adopted, budget: cap, traffic: await araTraffic(30) });
       }
 
       const body = await request.json().catch(function () { return {}; });
@@ -4846,7 +4905,8 @@ ${principleList}` },
         ask: ask,
         results: results,
         adopted: adopted,
-        budget: { used: budget.count, limit: DECIDE_PER_HOUR, hour: hour }
+        budget: { used: budget.count, limit: DECIDE_PER_HOUR, hour: hour },
+        traffic: await araTraffic(30)
       });
     }
     if (url.pathname === "/api/learn" && (request.method === "GET" || request.method === "POST")) {

@@ -2158,7 +2158,7 @@
         '<span><button class="ctrl-btn" id="watchAdd" style="font-size:10px;padding:2px 8px">+ tool</button> ' +
         '<button class="ctrl-btn" id="watchRefresh" style="font-size:10px;padding:2px 8px">refresh</button> ' +
         '<button class="ctrl-btn" id="watchClose" style="font-size:10px;padding:2px 8px">close</button></span>' +
-        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div><div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">Deciders</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="decideProbe" style="height:22px;font-size:10px;padding:0 6px">probe</button></span></div><div style="display:flex;gap:4px;margin-top:6px"><input id="decideText" placeholder="the ask to compare on" style="flex:1;min-width:0;height:24px;font-size:11px;background:var(--canvas);border:1px solid var(--border);color:var(--text);padding:0 6px;border-radius:3px"><button class="ctrl-btn" id="decideGo" style="height:24px;font-size:10px;padding:0 8px">run</button></div><div id="decideRows" style="color:var(--muted);margin-top:6px">not loaded</div>';
+        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div><div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">Deciders</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="decideProbe" style="height:22px;font-size:10px;padding:0 6px">probe</button></span></div><div style="display:flex;gap:4px;margin-top:6px"><input id="decideText" placeholder="the ask to compare on" style="flex:1;min-width:0;height:24px;font-size:11px;background:var(--canvas);border:1px solid var(--border);color:var(--text);padding:0 6px;border-radius:3px"><button class="ctrl-btn" id="decideGo" style="height:24px;font-size:10px;padding:0 8px">run</button></div><div id="decideRows" style="color:var(--muted);margin-top:6px">not loaded</div><div id="decideFoot" style="font-size:10px;color:var(--dim);margin-top:4px"></div><div id="decideTraffic" style="margin-top:8px"></div>';
       document.body.appendChild(el);
       el.querySelector('#watchClose').onclick = function () { el.style.display = 'none'; };
       el.querySelector('#watchRefresh').onclick = function () { refreshWatchtower(); };
@@ -2344,6 +2344,24 @@
       if (n === null || n === undefined) return '-';
       return '$' + ((n * 1000000).toFixed(2)) + '/M';
     }
+    function renderTraffic(t) {
+      const box = document.getElementById('decideTraffic');
+      if (!box) return;
+      box.innerHTML = '';
+      if (!t) return;
+      if (!t.ok) { box.textContent = 'recorded traffic unavailable: ' + (t.error || 'unknown'); return; }
+      const head = document.createElement('div');
+      head.style.cssText = 'font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:3px';
+      head.textContent = 'Recorded · last ' + (t.total || 0) + ' decisions in ARA';
+      box.appendChild(head);
+      (t.models || []).forEach(function (m) {
+        const line = document.createElement('div');
+        line.style.cssText = 'font-size:10px;color:var(--muted);line-height:1.5';
+        line.textContent = m.model + ' \u00b7 ' + m.n + ' \u00b7 med ' + (m.msMedian == null ? '-' : m.msMedian + 'ms') + ' \u00b7 ' + decideCost(m.cost);
+        box.appendChild(line);
+      });
+      if (!(t.models || []).length) box.appendChild(document.createTextNode('no rows yet'));
+    }
     function renderDecideBudget(b) {
       const foot = document.getElementById('decideFoot');
       if (!foot) return;
@@ -2360,6 +2378,7 @@
           ? ('adopted: ' + adopted.model + ' \u00b7 ' + (adopted.at || ''))
           : 'Nothing adopted. Type an ask and probe to compare them.';
         renderDecideBudget(d.budget);
+        renderTraffic(d.traffic);
         return;
       }
       results.forEach(function (r) {
@@ -2405,6 +2424,7 @@
         box.appendChild(row);
       });
       renderDecideBudget(d.budget);
+      renderTraffic(d.traffic);
     }
     async function probeDeciders() {
       const input = document.getElementById('decideText');
