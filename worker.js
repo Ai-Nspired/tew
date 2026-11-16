@@ -4567,6 +4567,43 @@ var Workspace = class extends DurableObject {
       this.broadcast({ type: "card_created", card });
       return json(card, 201);
     }
+    // The client edits a card with PATCH /api/cards/:id and removes it with
+    // DELETE — and neither route existed, so every title edit, every browser
+    // navigation and every delete came back 404 and was silently dropped. That is
+    // why a browser card could be pointed at cods, render it, and still be mind
+    // after a reload: the frame moved, the card never did.
+    if (url.pathname.startsWith("/api/cards/") && (request.method === "PATCH" || request.method === "DELETE")) {
+      const target = decodeURIComponent(url.pathname.slice("/api/cards/".length));
+      if (target.indexOf("/") !== -1) return json({ error: "Not found" }, 404);
+      const card = this.cards.find(function (c) { return c && c.id === target; });
+
+      if (request.method === "DELETE") {
+        if (!card) return json({ error: "Card not found" }, 404);
+        this.cards = this.cards.filter(function (c) { return !c || c.id !== target; });
+        await this.persist();
+        this.broadcast({ type: "card_deleted", cardId: target });
+        return json({ ok: true, deleted: target });
+      }
+
+      const body = await request.json().catch(function () { return null; });
+      if (!body || typeof body !== "object") return json({ error: "Body required" }, 400);
+      if (!card) return json({ error: "Card not found" }, 404);
+
+      const EDITABLE = ["title", "content", "url", "type", "confidence", "eitlStatus", "relationships", "dockEdge"];
+      let touched = 0;
+      EDITABLE.forEach(function (field) {
+        if (!Object.prototype.hasOwnProperty.call(body, field)) return;
+        if (body[field] === void 0) return;
+        card[field] = body[field];
+        touched += 1;
+      });
+      if (!touched) return json({ error: "Nothing to update" }, 400);
+
+      card.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      await this.persist();
+      this.broadcast({ type: "card_updated", card: card });
+      return json(card);
+    }
     if (url.pathname === "/api/cards/manipulate" && request.method === "POST") {
       const { action, cardIds, promptText } = await request.json();
       const targets = this.cards.filter((c) => cardIds.includes(c.id));
