@@ -179,14 +179,15 @@
     .rel-link { font-size: 10px; color: #ff6b1a99; }
     #canvas { position: relative; width: 100%; height: calc(100vh - 52px); overflow: auto; }
         .topbar { height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--border); overflow: hidden; }
-    .topbar-scroll { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+    .topbar-scroll { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
     .topbar-scroll::-webkit-scrollbar { height: 4px; }
     .topbar-scroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
-    .topbar-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .topbar-scroll::-webkit-scrollbar-track { background: transparent; }
+    .topbar-group { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
     .topbar-sep { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; }
     .topbar-right { margin-left: auto; gap: 10px; }
     .meta { font-family: var(--mono); font-size: 11px; color: var(--dim); white-space: nowrap; }
-    .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; background: transparent; border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: var(--ui); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s, color .12s; }
+    .btn { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; background: transparent; border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: var(--ui); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background .12s, border-color .12s, color .12s; }
     .btn:hover { background: var(--raised); border-color: var(--border-strong); }
     .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     .btn:disabled { opacity: .6; cursor: progress; }
