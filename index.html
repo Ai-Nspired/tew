@@ -2158,7 +2158,7 @@
         '<span><button class="ctrl-btn" id="watchAdd" style="font-size:10px;padding:2px 8px">+ tool</button> ' +
         '<button class="ctrl-btn" id="watchRefresh" style="font-size:10px;padding:2px 8px">refresh</button> ' +
         '<button class="ctrl-btn" id="watchClose" style="font-size:10px;padding:2px 8px">close</button></span>' +
-        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div>';
+        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div><div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">Deciders</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="decideProbe" style="height:22px;font-size:10px;padding:0 6px">probe</button></span></div><div style="display:flex;gap:4px;margin-top:6px"><input id="decideText" placeholder="the ask to compare on" style="flex:1;min-width:0;height:24px;font-size:11px;background:var(--canvas);border:1px solid var(--border);color:var(--text);padding:0 6px;border-radius:3px"><button class="ctrl-btn" id="decideGo" style="height:24px;font-size:10px;padding:0 8px">run</button></div><div id="decideRows" style="color:var(--muted);margin-top:6px">not loaded</div>';
       document.body.appendChild(el);
       el.querySelector('#watchClose').onclick = function () { el.style.display = 'none'; };
       el.querySelector('#watchRefresh').onclick = function () { refreshWatchtower(); };
@@ -2166,6 +2166,8 @@
       el.querySelector('#learnAdd').onclick = function () { addLearnRow(); };
       el.querySelector('#learnForget').onclick = function () { learnForget(); };
       el.querySelector('#learnSeed').onclick = function () { learnSeed(); };
+      el.querySelector('#decideProbe').onclick = function () { probeDeciders(); };
+      el.querySelector('#decideGo').onclick = function () { probeDeciders(); };
       return el;
     }
     async function openWatchtower() {
@@ -2212,6 +2214,7 @@
         rows.textContent = 'watch error: ' + e.message;
       }
       loadLearned();
+      loadDecided();
     }
     async function loadLearned() {
       const box = document.getElementById('learnRows');
@@ -2322,6 +2325,128 @@
       showToast('Seeded ' + (d.seeded || 0) + ' rows from cods', 'success');
       loadLearned();
     }
+    async function loadDecided() {
+      const box = document.getElementById('decideRows');
+      if (!box) return;
+      const key = watchKey();
+      if (!key) return;
+      box.textContent = 'reading...';
+      try {
+        const res = await fetch(API('/decide'), { headers: { 'x-admin-key': key } });
+        const d = await res.json();
+        if (!res.ok) { box.textContent = d.message || d.error || 'deciders failed'; return; }
+        renderDecided(d);
+      } catch (e) {
+        box.textContent = 'deciders error: ' + e.message;
+      }
+    }
+    function decideCost(n) {
+      if (n === null || n === undefined) return '-';
+      return '$' + ((n * 1000000).toFixed(2)) + '/M';
+    }
+    function renderDecideBudget(b) {
+      const foot = document.getElementById('decideFoot');
+      if (!foot) return;
+      foot.textContent = b ? ('probes this hour: ' + (b.used || 0) + ' of ' + (b.limit || 0) + ' \u00b7 ' + (b.hour || '') + ':00Z') : '';
+    }
+    function renderDecided(d) {
+      const box = document.getElementById('decideRows');
+      if (!box) return;
+      box.innerHTML = '';
+      const adopted = d.adopted || null;
+      const results = d.results || null;
+      if (!results) {
+        box.textContent = adopted
+          ? ('adopted: ' + adopted.model + ' \u00b7 ' + (adopted.at || ''))
+          : 'Nothing adopted. Type an ask and probe to compare them.';
+        renderDecideBudget(d.budget);
+        return;
+      }
+      results.forEach(function (r) {
+        const row = document.createElement('div');
+        row.style.cssText = 'padding:7px 0;border-bottom:1px solid var(--border)';
+        const head = document.createElement('div');
+        head.style.cssText = 'display:flex;gap:6px;align-items:baseline;justify-content:space-between';
+        const name = document.createElement('span');
+        name.textContent = r.label + ' \u00b7 ' + r.model;
+        name.style.cssText = 'font-size:10px;color:var(--text)';
+        const ms = document.createElement('span');
+        ms.textContent = r.ok ? (r.ms + 'ms') : 'failed';
+        ms.style.cssText = 'font-size:10px;color:' + (r.ok ? 'var(--ok)' : 'var(--bad)');
+        head.appendChild(name);
+        head.appendChild(ms);
+        const meta = document.createElement('div');
+        meta.style.cssText = 'font-size:10px;color:var(--muted);margin-top:2px;line-height:1.45';
+        if (r.ok) {
+          const spread = r.spread ? ' \u00b7 ' + r.spread.map(function (s) { return s.option + ':' + s.p; }).join(' ') : '';
+          meta.textContent = r.choice + (r.route ? ' / ' + r.route : '') + ' \u00b7 conf ' + r.confidence + ' \u00b7 ' + decideCost(r.cost) + spread;
+        } else {
+          meta.textContent = r.error || 'no answer';
+        }
+        const ctl = document.createElement('div');
+        ctl.style.cssText = 'display:flex;gap:4px;margin-top:4px;align-items:center';
+        const isAdopted = !!(adopted && adopted.model === r.model);
+        const pick = document.createElement('button');
+        pick.className = 'ctrl-btn';
+        pick.style.cssText = 'height:20px;font-size:10px;padding:0 6px';
+        pick.textContent = isAdopted ? 'adopted' : 'adopt';
+        pick.disabled = isAdopted;
+        pick.onclick = function () { adoptDecider(r.model); };
+        ctl.appendChild(pick);
+        if (isAdopted) {
+          const on = document.createElement('span');
+          on.textContent = 'in use here';
+          on.style.cssText = 'font-size:9px;color:var(--ok)';
+          ctl.appendChild(on);
+        }
+        row.appendChild(head);
+        row.appendChild(meta);
+        row.appendChild(ctl);
+        box.appendChild(row);
+      });
+      renderDecideBudget(d.budget);
+    }
+    async function probeDeciders() {
+      const input = document.getElementById('decideText');
+      const ask = input ? input.value.trim() : '';
+      if (!ask) { showToast('Type the ask to compare on', 'error'); return; }
+      const key = watchKey();
+      if (!key) return;
+      const box = document.getElementById('decideRows');
+      if (box) box.textContent = 'asking every decider...';
+      try {
+        const res = await fetch(API('/decide'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+          body: JSON.stringify({ action: 'probe', ask: ask })
+        });
+        const d = await res.json().catch(function () { return {}; });
+        if (!res.ok) {
+          if (box) box.textContent = d.message || d.error || 'probe failed';
+          renderDecideBudget(d.budget);
+          return;
+        }
+        renderDecided(d);
+        const fast = (d.results || []).filter(function (r) { return r.ok; }).sort(function (a, b) { return a.ms - b.ms; })[0];
+        if (fast) showToast('Fastest: ' + fast.label + ' at ' + fast.ms + 'ms', 'success');
+      } catch (e) {
+        if (box) box.textContent = 'probe error: ' + e.message;
+      }
+    }
+    async function adoptDecider(model) {
+      const key = watchKey();
+      if (!key) return;
+      const res = await fetch(API('/decide'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify({ action: 'adopt', model: model })
+      });
+      const d = await res.json().catch(function () { return {}; });
+      if (!res.ok) { showToast(d.message || d.error || 'adopt failed', 'error'); return; }
+      showToast('Adopted ' + model, 'success');
+      loadDecided();
+    }
+
     async function addWatchTool() {
       const name = window.prompt('tool name');
       if (!name) return;

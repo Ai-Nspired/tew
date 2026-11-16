@@ -2728,7 +2728,7 @@ var INDEX_HTML = `<!DOCTYPE html>
         '<span><button class="ctrl-btn" id="watchAdd" style="font-size:10px;padding:2px 8px">+ tool</button> ' +
         '<button class="ctrl-btn" id="watchRefresh" style="font-size:10px;padding:2px 8px">refresh</button> ' +
         '<button class="ctrl-btn" id="watchClose" style="font-size:10px;padding:2px 8px">close</button></span>' +
-        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div>';
+        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div><div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">Deciders</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="decideProbe" style="height:22px;font-size:10px;padding:0 6px">probe</button></span></div><div style="display:flex;gap:4px;margin-top:6px"><input id="decideText" placeholder="the ask to compare on" style="flex:1;min-width:0;height:24px;font-size:11px;background:var(--canvas);border:1px solid var(--border);color:var(--text);padding:0 6px;border-radius:3px"><button class="ctrl-btn" id="decideGo" style="height:24px;font-size:10px;padding:0 8px">run</button></div><div id="decideRows" style="color:var(--muted);margin-top:6px">not loaded</div><div id="decideFoot" style="font-size:10px;color:var(--dim);margin-top:4px"></div>';
       document.body.appendChild(el);
       el.querySelector('#watchClose').onclick = function () { el.style.display = 'none'; };
       el.querySelector('#watchRefresh').onclick = function () { refreshWatchtower(); };
@@ -2736,6 +2736,8 @@ var INDEX_HTML = `<!DOCTYPE html>
       el.querySelector('#learnAdd').onclick = function () { addLearnRow(); };
       el.querySelector('#learnForget').onclick = function () { learnForget(); };
       el.querySelector('#learnSeed').onclick = function () { learnSeed(); };
+      el.querySelector('#decideProbe').onclick = function () { probeDeciders(); };
+      el.querySelector('#decideGo').onclick = function () { probeDeciders(); };
       return el;
     }
     async function openWatchtower() {
@@ -2782,6 +2784,7 @@ var INDEX_HTML = `<!DOCTYPE html>
         rows.textContent = 'watch error: ' + e.message;
       }
       loadLearned();
+      loadDecided();
     }
     async function loadLearned() {
       const box = document.getElementById('learnRows');
@@ -2892,6 +2895,128 @@ var INDEX_HTML = `<!DOCTYPE html>
       showToast('Seeded ' + (d.seeded || 0) + ' rows from cods', 'success');
       loadLearned();
     }
+    async function loadDecided() {
+      const box = document.getElementById('decideRows');
+      if (!box) return;
+      const key = watchKey();
+      if (!key) return;
+      box.textContent = 'reading...';
+      try {
+        const res = await fetch(API('/decide'), { headers: { 'x-admin-key': key } });
+        const d = await res.json();
+        if (!res.ok) { box.textContent = d.message || d.error || 'deciders failed'; return; }
+        renderDecided(d);
+      } catch (e) {
+        box.textContent = 'deciders error: ' + e.message;
+      }
+    }
+    function decideCost(n) {
+      if (n === null || n === undefined) return '-';
+      return '$' + ((n * 1000000).toFixed(2)) + '/M';
+    }
+    function renderDecideBudget(b) {
+      const foot = document.getElementById('decideFoot');
+      if (!foot) return;
+      foot.textContent = b ? ('probes this hour: ' + (b.used || 0) + ' of ' + (b.limit || 0) + ' \u00b7 ' + (b.hour || '') + ':00Z') : '';
+    }
+    function renderDecided(d) {
+      const box = document.getElementById('decideRows');
+      if (!box) return;
+      box.innerHTML = '';
+      const adopted = d.adopted || null;
+      const results = d.results || null;
+      if (!results) {
+        box.textContent = adopted
+          ? ('adopted: ' + adopted.model + ' \u00b7 ' + (adopted.at || ''))
+          : 'Nothing adopted. Type an ask and probe to compare them.';
+        renderDecideBudget(d.budget);
+        return;
+      }
+      results.forEach(function (r) {
+        const row = document.createElement('div');
+        row.style.cssText = 'padding:7px 0;border-bottom:1px solid var(--border)';
+        const head = document.createElement('div');
+        head.style.cssText = 'display:flex;gap:6px;align-items:baseline;justify-content:space-between';
+        const name = document.createElement('span');
+        name.textContent = r.label + ' \u00b7 ' + r.model;
+        name.style.cssText = 'font-size:10px;color:var(--text)';
+        const ms = document.createElement('span');
+        ms.textContent = r.ok ? (r.ms + 'ms') : 'failed';
+        ms.style.cssText = 'font-size:10px;color:' + (r.ok ? 'var(--ok)' : 'var(--bad)');
+        head.appendChild(name);
+        head.appendChild(ms);
+        const meta = document.createElement('div');
+        meta.style.cssText = 'font-size:10px;color:var(--muted);margin-top:2px;line-height:1.45';
+        if (r.ok) {
+          const spread = r.spread ? ' \u00b7 ' + r.spread.map(function (s) { return s.option + ':' + s.p; }).join(' ') : '';
+          meta.textContent = r.choice + (r.route ? ' / ' + r.route : '') + ' \u00b7 conf ' + r.confidence + ' \u00b7 ' + decideCost(r.cost) + spread;
+        } else {
+          meta.textContent = r.error || 'no answer';
+        }
+        const ctl = document.createElement('div');
+        ctl.style.cssText = 'display:flex;gap:4px;margin-top:4px;align-items:center';
+        const isAdopted = !!(adopted && adopted.model === r.model);
+        const pick = document.createElement('button');
+        pick.className = 'ctrl-btn';
+        pick.style.cssText = 'height:20px;font-size:10px;padding:0 6px';
+        pick.textContent = isAdopted ? 'adopted' : 'adopt';
+        pick.disabled = isAdopted;
+        pick.onclick = function () { adoptDecider(r.model); };
+        ctl.appendChild(pick);
+        if (isAdopted) {
+          const on = document.createElement('span');
+          on.textContent = 'in use here';
+          on.style.cssText = 'font-size:9px;color:var(--ok)';
+          ctl.appendChild(on);
+        }
+        row.appendChild(head);
+        row.appendChild(meta);
+        row.appendChild(ctl);
+        box.appendChild(row);
+      });
+      renderDecideBudget(d.budget);
+    }
+    async function probeDeciders() {
+      const input = document.getElementById('decideText');
+      const ask = input ? input.value.trim() : '';
+      if (!ask) { showToast('Type the ask to compare on', 'error'); return; }
+      const key = watchKey();
+      if (!key) return;
+      const box = document.getElementById('decideRows');
+      if (box) box.textContent = 'asking every decider...';
+      try {
+        const res = await fetch(API('/decide'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+          body: JSON.stringify({ action: 'probe', ask: ask })
+        });
+        const d = await res.json().catch(function () { return {}; });
+        if (!res.ok) {
+          if (box) box.textContent = d.message || d.error || 'probe failed';
+          renderDecideBudget(d.budget);
+          return;
+        }
+        renderDecided(d);
+        const fast = (d.results || []).filter(function (r) { return r.ok; }).sort(function (a, b) { return a.ms - b.ms; })[0];
+        if (fast) showToast('Fastest: ' + fast.label + ' at ' + fast.ms + 'ms', 'success');
+      } catch (e) {
+        if (box) box.textContent = 'probe error: ' + e.message;
+      }
+    }
+    async function adoptDecider(model) {
+      const key = watchKey();
+      if (!key) return;
+      const res = await fetch(API('/decide'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+        body: JSON.stringify({ action: 'adopt', model: model })
+      });
+      const d = await res.json().catch(function () { return {}; });
+      if (!res.ok) { showToast(d.message || d.error || 'adopt failed', 'error'); return; }
+      showToast('Adopted ' + model, 'success');
+      loadDecided();
+    }
+
     async function addWatchTool() {
       const name = window.prompt('tool name');
       if (!name) return;
@@ -3918,6 +4043,89 @@ function sameKey(given, want) {
   return drift === 0;
 }
 
+
+// ─── the deciders ────────────────────────────────────────────────────────────
+// Who decides, what it costs, and how long it takes. A decision model answers a
+// typed question and writes nothing, so picking one is a comparison on his own
+// asks: the same state, the same questions, every model, side by side. The cost
+// comes back with the answer; the milliseconds are measured here.
+const DECIDE_MODELS = [
+  { id: "perplexity/pplx-decider-flash-v1.2", label: "pplx flash", list: "$0.01/M" },
+  { id: "perplexity/pplx-decider-v1.2", label: "pplx joint", list: "$0.02/M" },
+  { id: "scaledown/classify-1", label: "scaledown", list: "$0.04/M" }
+];
+const DECIDE_STORE = "DECIDE:choice";
+const DECIDE_BUDGET = "DECIDE:budget";
+const DECIDE_PER_HOUR = 10;
+function decideHourOf(d) { return d.toISOString().slice(0, 13); }
+function decideRounded(n) { return typeof n === "number" && isFinite(n) ? Math.round(n * 1000) / 1000 : null; }
+function decideSpread(p) {
+  if (!p || typeof p !== "object") return null;
+  return Object.keys(p).map(function (k) { return { option: k, p: decideRounded(p[k]) }; })
+    .sort(function (a, b) { return (b.p || 0) - (a.p || 0); }).slice(0, 3);
+}
+function decideQuestions() {
+  return {
+    intent: {
+      type: "choice",
+      instructions: "He has handed you this. Which is it: a result he wants produced, a preset he wants run, or something he is asking?",
+      criteria: {
+        result: "A result — the thing itself, produced: what the store already holds, or the artifact built. No new prose.",
+        preset: "A preset run — one of the fixed prompts he has saved, run on this.",
+        ask: "Something he is asking — a question that wants an answer.",
+        unclear: "I am not sure which of these he wants — ask him."
+      }
+    },
+    route: {
+      type: "choice",
+      instructions: "Which surface does this belong on?",
+      criteria: {
+        truth: "the stored answer, if the store has one",
+        cards: "the card workspace and its table",
+        browse: "the live web, read first",
+        general: "no particular surface"
+      }
+    }
+  };
+}
+// The proxy is the transport: orproxy forwards to ai-proxy, which holds the key
+// and returns usage.cost. TEW never needs the OpenRouter key of its own.
+async function runDecider(env, model, ask) {
+  const started = Date.now();
+  const out = { model: model.id, label: model.label, list: model.list, ok: false, ms: null };
+  if (!env || !env.ORPROXY || typeof env.ORPROXY.fetch !== "function") {
+    out.error = "ORPROXY is not bound";
+    return out;
+  }
+  try {
+    const res = await env.ORPROXY.fetch(new Request("https://orproxy/api/decide", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: model.id, state: ask, questions: decideQuestions() }),
+      signal: AbortSignal.timeout(20000)
+    }));
+    out.ms = Date.now() - started;
+    out.status = res.status;
+    const data = await res.json().catch(function () { return null; });
+    if (!res.ok || !data) { out.error = "http " + res.status; return out; }
+    const intent = (data.answers && data.answers.intent) || null;
+    const route = (data.answers && data.answers.route) || null;
+    out.ok = true;
+    out.served = data.model || null;
+    out.choice = (intent && intent.choice) || null;
+    out.confidence = decideRounded(intent && intent.confidence);
+    out.spread = decideSpread(intent && intent.probabilities);
+    out.route = (route && route.choice) || null;
+    out.routeConfidence = decideRounded(route && route.confidence);
+    out.cost = (data.usage && typeof data.usage.cost === "number") ? data.usage.cost : null;
+    out.tokensIn = (data.usage && data.usage.input_tokens) || null;
+  } catch (err) {
+    out.ms = Date.now() - started;
+    out.error = String((err && err.message) || err);
+  }
+  return out;
+}
+
 var Workspace = class extends DurableObject {
   cards = null;
   principles = null;
@@ -4589,6 +4797,57 @@ ${principleList}` },
       await this.persist();
       this.broadcast({ type: "card_created", card: queryCard });
       return json({ ...queryResult, card: queryCard });
+    }
+    if (url.pathname === "/api/decide" && (request.method === "GET" || request.method === "POST")) {
+      // ADMIN_KEY only: this route spends OpenRouter credit on every call and
+      // stores the pick, so nothing anonymous reaches it.
+      const denied = adminGate(this.env, request);
+      if (denied) return denied;
+      const now = new Date();
+      const hour = decideHourOf(now);
+      const stored = await this.ctx.storage.get(DECIDE_BUDGET);
+      const budget = stored && stored.hour === hour ? stored : { hour: hour, count: 0 };
+      const adopted = (await this.ctx.storage.get(DECIDE_STORE)) || null;
+      const cap = { used: budget.count || 0, limit: DECIDE_PER_HOUR, hour: hour };
+
+      if (request.method === "GET") {
+        return json({ at: now.toISOString(), models: DECIDE_MODELS, adopted: adopted, budget: cap });
+      }
+
+      const body = await request.json().catch(function () { return {}; });
+      const action = String(body.action || "probe").trim();
+
+      if (action === "adopt") {
+        const want = String(body.model || "").trim();
+        const picked = DECIDE_MODELS.filter(function (m) { return m.id === want; })[0];
+        if (!picked) return json({ error: "unknown_model", message: "That is not one of the deciders on the list." }, 400);
+        await this.ctx.storage.put(DECIDE_STORE, { model: picked.id, label: picked.label, list: picked.list, at: now.toISOString() });
+        return json({ ok: true, adopted: { model: picked.id, label: picked.label, list: picked.list, at: now.toISOString() } });
+      }
+
+      if (action === "release") {
+        await this.ctx.storage.delete(DECIDE_STORE);
+        return json({ ok: true, adopted: null });
+      }
+
+      // One ask, every decider. Bounded, because a route that spends money and
+      // sits behind one key can still be held down by accident.
+      const ask = String(body.ask || "").trim().slice(0, 500);
+      if (!ask) return json({ error: "ask_required", message: "Send the ask to compare on." }, 400);
+      if ((budget.count || 0) >= DECIDE_PER_HOUR) {
+        return json({ error: "probe_capped", message: "Ten comparisons an hour; the count resets at " + hour + ":00Z.", budget: cap }, 429);
+      }
+      budget.count = (budget.count || 0) + 1;
+      await this.ctx.storage.put(DECIDE_BUDGET, budget);
+      const env = this.env;
+      const results = await Promise.all(DECIDE_MODELS.map(function (m) { return runDecider(env, m, ask); }));
+      return json({
+        at: now.toISOString(),
+        ask: ask,
+        results: results,
+        adopted: adopted,
+        budget: { used: budget.count, limit: DECIDE_PER_HOUR, hour: hour }
+      });
     }
     if (url.pathname === "/api/learn" && (request.method === "GET" || request.method === "POST")) {
       // ADMIN_KEY for the sheet, LEARN_KEY for the tools that read it back.
