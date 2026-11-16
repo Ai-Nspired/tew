@@ -2227,18 +2227,85 @@
       }
       return key || '';
     }
+    // Every section folds, and every section copies as one block, so the panel can be
+    // handed to another agent without transcribing it by hand.
+    function wtCollapsed() {
+      try { return JSON.parse(localStorage.getItem('tew_wt_collapsed') || '{}') || {}; } catch (e) { return {}; }
+    }
+    function wtSaveCollapsed(state) {
+      try { localStorage.setItem('tew_wt_collapsed', JSON.stringify(state)); } catch (e) {}
+    }
+    function wtApplyCollapse() {
+      const state = wtCollapsed();
+      document.querySelectorAll('[data-wt-body]').forEach(function (body) {
+        const key = body.getAttribute('data-wt-body');
+        const hidden = !!state[key];
+        body.style.display = hidden ? 'none' : 'block';
+        const caret = document.querySelector('[data-wt-caret="' + key + '"]');
+        if (caret) caret.textContent = hidden ? '\u25b8' : '\u25be';
+      });
+    }
+    function wtToggleSection(key) {
+      const state = wtCollapsed();
+      state[key] = !state[key];
+      wtSaveCollapsed(state);
+      wtApplyCollapse();
+    }
+    function wtCopySection(key) {
+      const body = document.querySelector('[data-wt-body="' + key + '"]');
+      if (!body) return;
+      const titleEl = document.querySelector('[data-wt-toggle="' + key + '"]');
+      const title = titleEl ? titleEl.textContent.replace(/^[\s\u25b8\u25be]+/, '').trim() : key;
+      const text = '# Watchtower \u2014 ' + title + '\n\n' + (body.innerText || '').trim();
+      const ok = function () { showToast('copied ' + key, 'success'); };
+      const bad = function () { showToast('copy failed', 'warning'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, bad);
+      else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;left:-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy') ? ok() : bad(); } catch (e) { bad(); }
+        ta.remove();
+      }
+    }
+    function wtSect(key, title, actionsHtml, bodyHtml) {
+      return '<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px" data-wt-sect="' + key + '">' +
+        '<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center">' +
+          '<button data-wt-toggle="' + key + '" style="background:none;border:0;padding:0;cursor:pointer;color:var(--accent);font-size:12px;font-family:var(--mono);text-align:left"><span data-wt-caret="' + key + '">\u25be</span> ' + title + '</button>' +
+          '<span style="display:flex;flex-wrap:wrap;gap:4px">' + (actionsHtml || '') +
+            '<button class="ctrl-btn" data-wt-copy="' + key + '" style="height:22px;font-size:10px;padding:0 6px">copy</button>' +
+          '</span>' +
+        '</div>' +
+        '<div data-wt-body="' + key + '" style="margin-top:4px">' + bodyHtml + '</div>' +
+      '</div>';
+    }
     function watchPanel() {
       let el = document.getElementById('watchtower');
       if (el) return el;
       el = document.createElement('div');
       el.id = 'watchtower';
       el.style.cssText = 'position:fixed;top:52px;right:0;bottom:0;width:min(480px,92vw);overflow:auto;background:var(--panel);border-left:1px solid var(--border);padding:14px;z-index:var(--z-panel);font-family:var(--mono);font-size:12px;line-height:1.65;color:var(--text);display:none';
-      el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">' +
-        '<strong style="color:var(--accent)">Watchtower</strong>' +
-        '<span><button class="ctrl-btn" id="watchAdd" style="font-size:10px;padding:2px 8px">+ tool</button> ' +
-        '<button class="ctrl-btn" id="watchRefresh" style="font-size:10px;padding:2px 8px">refresh</button> ' +
-        '<button class="ctrl-btn" id="watchClose" style="font-size:10px;padding:2px 8px">close</button></span>' +
-        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div><div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">Deciders</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="decideProbe" style="height:22px;font-size:10px;padding:0 6px">probe</button></span></div><div style="display:flex;gap:4px;margin-top:6px"><input id="decideText" placeholder="the ask to compare on" style="flex:1;min-width:0;height:24px;font-size:11px;background:var(--canvas);border:1px solid var(--border);color:var(--text);padding:0 6px;border-radius:3px"><button class="ctrl-btn" id="decideGo" style="height:24px;font-size:10px;padding:0 8px">run</button></div><div id="decideRows" style="color:var(--muted);margin-top:6px">not loaded</div><div id="decideFoot" style="font-size:10px;color:var(--dim);margin-top:4px"></div><div id="decideTraffic" style="margin-top:8px"></div><div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">Keys</strong><span><button class="ctrl-btn" id="keysCheck" style="height:22px;font-size:10px;padding:0 6px">check</button></span></div><div id="keysRows" style="color:var(--muted);margin-top:6px">not checked</div>';
+
+      el.innerHTML =
+        wtSect('tools', 'Watchtower',
+          '<button class="ctrl-btn" id="watchAdd" style="height:22px;font-size:10px;padding:0 6px">+ tool</button> ' +
+          '<button class="ctrl-btn" id="watchRefresh" style="height:22px;font-size:10px;padding:0 6px">refresh</button> ' +
+          '<button class="ctrl-btn" id="watchClose" style="height:22px;font-size:10px;padding:0 6px">close</button>',
+          '<div id="watchRows" style="color:#8fa6bd">not checked yet</div>') +
+        wtSect('learned', 'What it learned',
+          '<button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> ' +
+          '<button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> ' +
+          '<button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button>',
+          '<div id="learnRows" style="color:var(--muted)">not loaded</div>') +
+        wtSect('deciders', 'Deciders',
+          '<button class="ctrl-btn" id="decideProbe" style="height:22px;font-size:10px;padding:0 6px">probe</button>',
+          '<div style="display:flex;gap:4px;margin-top:2px"><input id="decideText" placeholder="the ask to compare on" style="flex:1;min-width:0;height:24px;font-size:11px;background:var(--canvas);border:1px solid var(--border);color:var(--text);padding:0 6px;border-radius:3px"><button class="ctrl-btn" id="decideGo" style="height:24px;font-size:10px;padding:0 8px">run</button></div><div id="decideRows" style="color:var(--muted);margin-top:6px">not loaded</div><div id="decideFoot" style="font-size:10px;color:var(--dim);margin-top:4px"></div><div id="decideTraffic" style="margin-top:8px"></div>') +
+        wtSect('keys', 'Keys',
+          '<button class="ctrl-btn" id="keysCheck" style="height:22px;font-size:10px;padding:0 6px">check</button>',
+          '<div id="keysRows" style="color:var(--muted)">not checked</div><div id="keysTldr"></div>');
+
       document.body.appendChild(el);
       el.querySelector('#watchClose').onclick = function () { el.style.display = 'none'; };
       el.querySelector('#watchRefresh').onclick = function () { refreshWatchtower(); };
@@ -2249,8 +2316,16 @@
       el.querySelector('#decideProbe').onclick = function () { probeDeciders(); };
       el.querySelector('#decideGo').onclick = function () { probeDeciders(); };
       el.querySelector('#keysCheck').onclick = function () { loadKeys(); };
+      el.addEventListener('click', function (e) {
+        const toggle = e.target.closest ? e.target.closest('[data-wt-toggle]') : null;
+        if (toggle) { wtToggleSection(toggle.getAttribute('data-wt-toggle')); return; }
+        const copy = e.target.closest ? e.target.closest('[data-wt-copy]') : null;
+        if (copy) wtCopySection(copy.getAttribute('data-wt-copy'));
+      });
+      wtApplyCollapse();
       return el;
     }
+
     async function openWatchtower() {
       watchPanel().style.display = 'block';
       await refreshWatchtower();
@@ -2440,6 +2515,26 @@
 
       keysPlan(d);
 
+      // The bottom line, for the days the detail is too much.
+      const tldrBox = document.getElementById('keysTldr');
+      if (tldrBox) {
+        tldrBox.innerHTML = '';
+        if ((d.tldr || []).length) {
+          const box = document.createElement('div');
+          box.style.cssText = 'margin-top:12px;padding:8px 10px;border:1px solid var(--border);border-left:2px solid var(--accent);border-radius:3px;background:var(--canvas)';
+          const head = document.createElement('div');
+          head.style.cssText = 'font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:4px';
+          head.textContent = 'actionable intelligence';
+          box.appendChild(head);
+          d.tldr.forEach(function (line) {
+            const row = document.createElement('div');
+            row.style.cssText = 'font-size:11px;color:#c9dced;margin-top:2px';
+            row.textContent = '\u2022 ' + line;
+            box.appendChild(row);
+          });
+          tldrBox.appendChild(box);
+        }
+      }
       if (d.at) box.appendChild(keysLine('checked ' + d.at, '#5b7288'));
     }
     async function loadLearned() {
