@@ -2241,6 +2241,18 @@
       line.textContent = text;
       return line;
     }
+    function keysCmd(text) {
+      const line = document.createElement('div');
+      line.style.cssText = 'margin-top:4px;padding:5px 6px;background:var(--canvas);border:1px solid var(--border);border-radius:3px;font-family:var(--mono);font-size:10px;line-height:1.5;color:#c9dced;word-break:break-all;cursor:pointer';
+      line.textContent = text;
+      line.title = 'click to copy';
+      line.onclick = function () {
+        const done = function () { showToast('copied', 'success'); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () {});
+        else done();
+      };
+      return line;
+    }
     function renderKeys(d) {
       const box = document.getElementById('keysRows');
       if (!box) return;
@@ -2280,6 +2292,15 @@
       if ((d.services || []).length) {
         box.appendChild(keysLine('held', 'var(--muted)', 'tag'));
         d.services.forEach(function (s) { box.appendChild(keysLine(s.service + ' \u2014 ' + s.secrets.join(', '), '#5b7288')); });
+      }
+
+      if ((d.rotate || []).length) {
+        box.appendChild(keysLine('rotate manually', 'var(--muted)', 'tag'));
+        d.rotate.forEach(function (r) {
+          box.appendChild(keysLine(r.step + '. ' + r.title + ' \u2014 ' + r.targets.join(', '), '#8fa6bd'));
+          if (r.cmd) box.appendChild(keysCmd(r.cmd));
+          if (r.alone) box.appendChild(keysLine('alone: ' + r.alone, '#5b7288'));
+        });
       }
       if (d.at) box.appendChild(keysLine('checked ' + d.at, '#5b7288'));
     }

@@ -2811,6 +2811,18 @@ var INDEX_HTML = `<!DOCTYPE html>
       line.textContent = text;
       return line;
     }
+    function keysCmd(text) {
+      const line = document.createElement('div');
+      line.style.cssText = 'margin-top:4px;padding:5px 6px;background:var(--canvas);border:1px solid var(--border);border-radius:3px;font-family:var(--mono);font-size:10px;line-height:1.5;color:#c9dced;word-break:break-all;cursor:pointer';
+      line.textContent = text;
+      line.title = 'click to copy';
+      line.onclick = function () {
+        const done = function () { showToast('copied', 'success'); };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () {});
+        else done();
+      };
+      return line;
+    }
     function renderKeys(d) {
       const box = document.getElementById('keysRows');
       if (!box) return;
@@ -2850,6 +2862,15 @@ var INDEX_HTML = `<!DOCTYPE html>
       if ((d.services || []).length) {
         box.appendChild(keysLine('held', 'var(--muted)', 'tag'));
         d.services.forEach(function (s) { box.appendChild(keysLine(s.service + ' \u2014 ' + s.secrets.join(', '), '#5b7288')); });
+      }
+
+      if ((d.rotate || []).length) {
+        box.appendChild(keysLine('rotate manually', 'var(--muted)', 'tag'));
+        d.rotate.forEach(function (r) {
+          box.appendChild(keysLine(r.step + '. ' + r.title + ' \u2014 ' + r.targets.join(', '), '#8fa6bd'));
+          if (r.cmd) box.appendChild(keysCmd(r.cmd));
+          if (r.alone) box.appendChild(keysLine('alone: ' + r.alone, '#5b7288'));
+        });
       }
       if (d.at) box.appendChild(keysLine('checked ' + d.at, '#5b7288'));
     }
@@ -5271,6 +5292,46 @@ ${principleList}` },
           { service: "ai-proxy", secrets: ["OPENROUTER_API_KEY"], reads: "upstream spend" },
           { service: "orproxy", secrets: ["ADMIN_SECRET", "OPENROUTER_API_KEY"], reads: "proxy gate and upstream spend" },
           { service: "pi-harness-example", secrets: ["CLOUDFLARE_API_TOKEN", "OPENROUTER_API_KEY", "SEARING_URL2"], reads: "harness generation" }
+        ],
+        // Rotation stays a shell job — this only says which ones, in what order,
+        // and what breaks if one side of a pair moves without the other. Values
+        // are generated straight into `secret put` so they never touch a screen.
+        rotate: [
+          {
+            step: 1, title: "the short family", targets: ["tew:ADMIN_KEY", "ara:ADMIN_KEY", "mind:ADMIN_KEY", "truth:ADMIN_KEY"], pair: false,
+            cmd: "python3 -c \"import secrets;print(secrets.token_urlsafe(32))\" | npx wrangler@4 secret put ADMIN_KEY --name tew",
+            alone: "nothing — each Worker reads only its own copy"
+          },
+          {
+            step: 2, title: "the ARA pair, one value in three places", targets: ["ara:ADMIN_KEY", "tew:ARA_KEY", "mind:ARA_KEY"], pair: true,
+            cmd: "NEW=$(python3 -c \"import secrets;print(secrets.token_urlsafe(32))\"); printf '%s' \"$NEW\" | npx wrangler@4 secret put ADMIN_KEY --name ara; printf '%s' \"$NEW\" | npx wrangler@4 secret put ARA_KEY --name tew; printf '%s' \"$NEW\" | npx wrangler@4 secret put ARA_KEY --name mind",
+            alone: "ladder writes, the decider probe and mind's reports all 401 until the third copy lands"
+          },
+          {
+            step: 3, title: "the LEARN pair — a create, not a rotate", targets: ["tew:LEARN_KEY", "mind:LEARN_KEY"], pair: true,
+            cmd: "NEW=$(python3 -c \"import secrets;print(secrets.token_urlsafe(32))\"); printf '%s' \"$NEW\" | npx wrangler@4 secret put LEARN_KEY --name tew; printf '%s' \"$NEW\" | npx wrangler@4 secret put LEARN_KEY --name mind",
+            alone: "mind cannot read the ladder it reports to — the read stays inert"
+          },
+          {
+            step: 4, title: "the proxy gate, and ara's misnamed key", targets: ["orproxy:ADMIN_SECRET", "ara:CLOUDFLARE _API_KEY"], pair: false,
+            cmd: "python3 -c \"import secrets;print(secrets.token_urlsafe(32))\" | npx wrangler@4 secret put ADMIN_SECRET --name orproxy",
+            alone: "fix the ara name first (CLOUDFLARE_API_KEY) or the new value is unreadable too"
+          },
+          {
+            step: 5, title: "the spend key, everywhere it is held", targets: ["tew", "ara", "mind", "cods", "ai-proxy", "orproxy", "pi-harness-example"], pair: false,
+            cmd: "python3 -c \"import secrets;print(secrets.token_urlsafe(32))\" | npx wrangler@4 secret put OPENROUTER_API_KEY --name ai-proxy",
+            alone: "do this last: a new key has to be funded and live before the old stops working. Setting one on tew drops the ORPROXY hop"
+          },
+          {
+            step: 6, title: "the account token — biggest blast radius", targets: ["ara", "mind", "cods", "pi-harness-example", "your deploy copy"], pair: false,
+            cmd: "python3 -c \"import secrets;print(secrets.token_urlsafe(32))\" | npx wrangler@4 secret put CLOUDFLARE_API_TOKEN --name mind",
+            alone: "it is also the token you deploy with — update the console and GitHub copy in the same sitting or the next deploy fails"
+          },
+          {
+            step: 7, title: "delete, don't rotate", targets: ["cods:ADMIN_KEY", "cods:KEY", "cods:CLOUDFLARE_API_TOKEN", "mind:KEY", "ara:CLOUDFLARE _API_KEY", "pi-harness-example:SEARING_URL2"], pair: false,
+            cmd: "npx wrangler@4 secret delete KEY --name cods",
+            alone: "nothing reads these; a value nobody reads is surface with no owner"
+          }
         ]
       });
     }
