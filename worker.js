@@ -5294,6 +5294,7 @@ ${principleList}` },
         ],
         misnamed: [
         ],
+        cleaned: "2026-11-16 \u2014 deleted cods ADMIN_KEY, KEY, CLOUDFLARE_API_TOKEN; mind KEY; ara CLOUDFLARE _API_KEY; pi-harness SEARING_URL2, each confirmed unread in its deployed script",
         spend: {
           openrouter_on_tew: String((this.env && this.env.OPENROUTER_API_KEY) || "").length > 0,
           note: "with no key here, TEW's generation and decider probe go through ORPROXY"
