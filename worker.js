@@ -5317,15 +5317,15 @@ ${principleList}` },
         // copy on every Worker. Anything else is clutter on a phone.
         plan: [
           {
-            title: "One key \u2014 same value, three places",
+            title: "One key \u2014 change every place that uses it",
             sub: "change all of these together or the calls 401",
             rows: [
               {
-                k: "ARA_KEY", where: "ara:ADMIN_KEY \u00b7 tew:ARA_KEY \u00b7 mind:ARA_KEY",
+                k: "the ARA key", where: "ara: ADMIN_KEY \u00b7 tew: ARA_KEY \u00b7 mind: ARA_KEY",
                 cmd: "NEW=$(python3 -c \"import secrets;print(secrets.token_urlsafe(32))\"); for w in ara tew mind; do n=ADMIN_KEY; [ $w != ara ] && n=ARA_KEY; printf '%s' \"$NEW\" | npx wrangler@4 secret put $n --name $w; done"
               },
               {
-                k: "LEARN_KEY", where: "tew:LEARN_KEY \u00b7 mind:LEARN_KEY  (mind's does not exist yet \u2014 create it)",
+                k: "the LEARN key", where: "tew: LEARN_KEY \u00b7 mind: LEARN_KEY  (mind's does not exist yet \u2014 create it)",
                 cmd: "NEW=$(python3 -c \"import secrets;print(secrets.token_urlsafe(32))\"); for w in tew mind; do printf '%s' \"$NEW\" | npx wrangler@4 secret put LEARN_KEY --name $w; done"
               }
             ]
