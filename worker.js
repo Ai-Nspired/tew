@@ -644,7 +644,7 @@ var INDEX_HTML = `<!DOCTYPE html>
     .text-cyan-300 { color: #7fd4e0; }
     [class~="hover:text-blue-400"]:hover { color: var(--accent); }
     [class~="hover:text-red-400"]:hover { color: #f2777a; }
-    body { background: var(--canvas); color: var(--text); font-family: var(--ui); font-size: 13px; }
+    body { background: var(--canvas); color: var(--text); font-family: var(--ui); font-size: 13px; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
     .card-window { position: absolute; min-width: 320px; max-width: 520px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 10px 28px rgba(0,0,0,0.45); transition: border-color .12s, box-shadow .12s; display: flex; flex-direction: column; overflow: hidden; }
     .card-window.browser-card { max-width: 640px; min-width: 400px; }
     .card-window:hover { border-color: var(--border-strong); box-shadow: 0 12px 32px rgba(0,0,0,0.55); }
@@ -747,9 +747,9 @@ var INDEX_HTML = `<!DOCTYPE html>
     .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .selected { border-color: #ff6b1a !important; box-shadow: 0 0 0 2px #ff6b1a55; }
     .rel-link { font-size: 10px; color: #ff6b1a99; }
-    #canvas { position: relative; width: 100%; height: calc(100vh - 52px); overflow: auto; }
-        .topbar { height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: var(--panel); border-bottom: 1px solid var(--border); overflow: hidden; }
-    .topbar-scroll { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+    #canvas { position: relative; width: 100%; flex: 1 1 auto; min-height: 0; overflow: auto; }
+        .topbar { min-height: 52px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--border); overflow: visible; flex: 0 0 auto; }
+    .topbar-scroll { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; flex: 1 1 auto; min-width: 0; }
     .topbar-scroll::-webkit-scrollbar { height: 4px; }
     .topbar-scroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
     .topbar-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -2728,7 +2728,7 @@ var INDEX_HTML = `<!DOCTYPE html>
         '<span><button class="ctrl-btn" id="watchAdd" style="font-size:10px;padding:2px 8px">+ tool</button> ' +
         '<button class="ctrl-btn" id="watchRefresh" style="font-size:10px;padding:2px 8px">refresh</button> ' +
         '<button class="ctrl-btn" id="watchClose" style="font-size:10px;padding:2px 8px">close</button></span>' +
-        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div>';
+        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div>';
       document.body.appendChild(el);
       el.querySelector('#watchClose').onclick = function () { el.style.display = 'none'; };
       el.querySelector('#watchRefresh').onclick = function () { refreshWatchtower(); };
