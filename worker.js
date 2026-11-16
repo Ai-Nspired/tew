@@ -1085,8 +1085,17 @@ var INDEX_HTML = `<!DOCTYPE html>
       document.querySelectorAll('.card-window').forEach(el => { positions[el.dataset.id] = { left: el.style.left, top: el.style.top }; });
       canvas.innerHTML = ''; cardCounter = 0;
       cards.forEach((card) => {
-        const pos = positions[card.id] || { left: \`\${cardCounter * 30 + 40}px\`, top: \`\${cardCounter * 30 + 40}px\` };
-        renderCard(card, parseFloat(pos.left) || cardCounter * 30 + 40, parseFloat(pos.top) || cardCounter * 30 + 40); cardCounter++;
+        // Saved coordinates are the truth; the cascade is only for a card that has never
+        // been placed. Left of 0 is a real position, which is why it must not be treated
+        // as missing - that turned every tile snapped to the left edge into a fan-out.
+        const pos = positions[card.id];
+        const cascade = cardCounter * 30 + 40;
+        const hasDom = !!(pos && pos.left !== '' && pos.top !== '');
+        const hasModel = typeof card.x === 'number' && typeof card.y === 'number';
+        const x = hasDom ? parseFloat(pos.left) : (hasModel ? card.x : cascade);
+        const y = hasDom ? parseFloat(pos.top) : (hasModel ? card.y : cascade);
+        renderCard(card, Number.isFinite(x) ? x : cascade, Number.isFinite(y) ? y : cascade);
+        cardCounter++;
       });
       updateStatus();
     }
@@ -1103,7 +1112,12 @@ var INDEX_HTML = `<!DOCTYPE html>
       const isImport = card.type === 'Import';
       el.className = \`card-window\${isBrowser ? ' browser-card' : ''}\`;
       if (card.width) el.style.width = \`\${card.width}px\`;
-      if (card.height) el.style.minHeight = \`\${card.height}px\`;
+      if (card.height) {
+        // An explicit height is what keeps a resized tile from being pushed back open by
+        // its content on the next render - minHeight alone was not enough.
+        el.style.minHeight = \`\${card.height}px\`;
+        el.style.height = \`\${card.height}px\`;
+      }
 
       // Docking zones
       el.innerHTML = \`
