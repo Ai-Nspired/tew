@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ai-Ncards</title>
+    <link rel="stylesheet" href="style.css?v=7">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+
+    <div id="topBar">
+        <div style="display:flex; align-items:center; gap: 8px; pointer-events: auto;">
+            <button class="fab" id="undoFabTop" title="Undo Last Action"><i class="fas fa-undo"></i></button>
+            <div id="brandPlaceholder">ai-Ncards</div>
+        </div>
+        <div class="top-fabs">
+            <button class="fab" id="webFab" title="Browse"><i class="fas fa-globe"></i></button>
+            <button class="fab" id="menuFab" title="Menu"><i class="fas fa-bars"></i></button>
+        </div>
+    </div>
+
+    <div id="selectionBar">
+        <div>
+            <button id="cancelSelect" class="btn btn-ghost" style="border:none;"><i class="fas fa-times"></i></button>
+            <span id="selectCount" style="margin-left:10px; font-weight:600;">0</span>
+        </div>
+        <div>
+            <button id="splitSelected" title="Split"><i class="fas fa-cut"></i></button>
+            <button id="mergeSelected" title="Merge"><i class="fas fa-layer-group"></i></button>
+            <button id="deleteSelected" title="Delete"><i class="fas fa-trash"></i></button>
+        </div>
+    </div>
+
+    <div class="fullscreen-overlay" id="fullscreenOverlay">
+        <div class="fs-header">
+            <div style="display:flex; gap:8px;">
+                <button class="btn btn-ghost" onclick="app.toggleFullscreenFlip()"><i class="fas fa-sync-alt"></i> Flip</button>
+                <button class="btn btn-ghost" onclick="app.toggleNativeFullscreen()"><i class="fas fa-expand"></i> Native</button>
+            </div>
+            <div style="display:flex; gap:8px;">
+                 <button class="btn btn-ghost" onclick="app.readCurrentFullscreen()"><i class="fas fa-volume-up"></i></button>
+                 <button class="btn btn-ghost" onclick="app.closeFullscreen()"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+        <div class="fs-content" id="fsContent">
+            <div class="fs-pane" id="fsRequestPane" style="display:none;">
+                <h3>Request</h3>
+                <div id="fsRequest"></div>
+            </div>
+            <div class="fs-pane" id="fsResponsePane">
+                <h3>Response</h3>
+                <div id="fsResponse"></div>
+                <div class="fs-grip" id="fsGrip" title="Drag to resize · double-click to fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="grid" tabindex="0">
+        <div id="emptyState">
+            <h3>Start Creating</h3>
+            <p>Type below to ask the AI.</p>
+            <p style="margin-top: 10px; font-size: 12px; opacity: 0.7;">Or type "open truth card" to create a preset card</p>
+            <div style="margin-top: 20px; opacity: 0.6; font-size: 0.9em;">
+                <i class="fas fa-hand-pointer"></i> Tap to flip<br>
+                <i class="fas fa-fingerprint"></i> Long press for menu
+            </div>
+        </div>
+    </div>
+
+    <div class="view-fab-container">
+        <button class="fab" id="gridFsFab" title="Native fullscreen"><i class="fas fa-expand"></i></button>
+        <button class="fab primary" id="viewFab" title="View"><i class="fas fa-columns"></i></button>
+    </div>
+
+    <div id="attachTray"></div>
+
+    <div id="inputPanel">
+        <button id="collapseInput" title="Hide the bar"><i class="fas fa-chevron-down"></i></button>
+        <button id="attachBtn" title="Attach a picture, PDF, Word, Excel, slides, audio or any other file"><i class="fas fa-paperclip"></i></button>
+        <input type="file" id="attachInput" multiple style="display:none;"
+               accept="image/*,audio/*,video/*,application/pdf,.docx,.xlsx,.pptx,.rtf,.txt,.md,.csv,.json,.xml,.yaml,.yml,.html,.js,.log,.zip">
+        <button id="micBtn" title="Record a voice note"><i class="fas fa-microphone"></i></button>
+        <button id="presetSelectorBtn" title="Cycle preset (shift-click for the list)"><i class="fas fa-sliders-h"></i> <span id="currentPresetLabel">Default</span></button>
+        <input type="text" id="userInput" placeholder="Type, say, or attach something..." autocomplete="off" spellcheck="false">
+        <button id="sendBtn" title="Send">⏎</button>
+    </div>
+
+    <button id="showInput" title="Show the bar"><i class="fas fa-chevron-up"></i> Show bar</button>
+
+    <div id="cardMenu">
+        <button class="menu-item" data-action="continue"><i class="fas fa-redo"></i> Continue</button>
+        <button class="menu-item" data-action="split"><i class="fas fa-cut"></i> Split</button>
+        <button class="menu-item" data-action="merge"><i class="fas fa-layer-group"></i> Merge</button>
+        <button class="menu-item" data-action="ai-edit"><i class="fas fa-magic"></i> AI Edit</button>
+        <div class="menu-separator"></div>
+        <button class="menu-item" data-action="create-preset-card"><i class="fas fa-plus"></i> Create Preset Card</button>
+        <button class="menu-item" data-action="ai-theme"><i class="fas fa-palette"></i> AI Theme</button>
+        <button class="menu-item" data-action="style"><i class="fas fa-paint-brush"></i> Manual Style</button>
+        <div class="menu-separator"></div>
+        <button class="menu-item" data-action="copy"><i class="fas fa-copy"></i> Copy</button>
+        <button class="menu-item" data-action="share-card"><i class="fas fa-share"></i> Share Card</button>
+        <button class="menu-item" data-action="export-pdf"><i class="fas fa-file-pdf"></i> Export PDF</button>
+        <button class="menu-item" data-action="shot-page"><i class="fas fa-camera"></i> Screenshot Page</button>
+        <button class="menu-item" data-action="fullscreen"><i class="fas fa-expand"></i> Fullscreen</button>
+        <button class="menu-item" data-action="undo"><i class="fas fa-undo"></i> Undo</button>
+        <div class="menu-separator"></div>
+        <button class="menu-item" data-action="delete"><i class="fas fa-trash"></i> Delete</button>
+    </div>
+
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Settings & Menu</h3>
+                <button class="btn btn-ghost" onclick="app.closeModal('settingsModal')"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="style-section">
+                    <h4>Engine</h4>
+                    <div class="toggle-group" style="margin-bottom:8px;">
+                        <button class="toggle-btn" id="engineToggle" onclick="app.toggleEngine()" aria-pressed="true">
+                            <i class="fas fa-cloud"></i> <span id="engineLabel">Cloudflare: On</span>
+                        </button>
+                    </div>
+                    <input type="password" id="engineKeyInput" placeholder="KEY (kept on this device)" autocomplete="off" style="width:100%; margin-bottom:8px;" oninput="app.saveEngineKey(this.value)">
+                    <small style="color:var(--text); opacity:0.7;">Off sends every answer to OpenRouter's free router and spends no daily neurons. Changing it needs the KEY; the state applies to every browser, not just this one.</small>
+                </div>
+                <div class="style-section">
+                    <h4>API Configuration</h4>
+                    <input type="text" id="proxyUrlInput" placeholder="https://this-site/api/chat" style="width:100%; margin-bottom:8px;">
+                    <small style="color:var(--text); opacity:0.7;">Already filled in with this site's own address. Change it only to point somewhere else.</small>
+                </div>
+                <div class="style-section">
+                    <h4>Data Management</h4>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 16px;">
+                        <button class="btn btn-primary" onclick="app.exportData()"><i class="fas fa-download"></i> Export JSON</button>
+                        <button class="btn btn-primary" onclick="app.exportToPDF()"><i class="fas fa-file-pdf"></i> Export PDF</button>
+                        <button class="btn btn-ghost" onclick="document.getElementById('fileInput').click()"><i class="fas fa-upload"></i> Import</button>
+                        <input type="file" id="fileInput" style="display:none;" accept=".json" onchange="app.importData(this)">
+                    </div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 16px;">
+                        <button class="btn btn-ghost" onclick="app.shareSelectedCards()"><i class="fas fa-share"></i> Share Selected</button>
+                        <button class="btn btn-ghost" onclick="app.copyShareableLink()"><i class="fas fa-link"></i> Copy Link</button>
+                    </div>
+                    <button class="btn btn-danger" onclick="app.clearAll()"><i class="fas fa-trash-alt"></i> Clear All Cards</button>
+                    <br><br>
+                    <button class="btn btn-danger" onclick="app.resetApp()" style="background-color: #b71c1c; border: 1px solid #d32f2f;">
+                        <i class="fas fa-power-off"></i> Factory Reset (Clear Storage)
+                    </button>
+                </div>
+                <div class="style-section">
+                    <h4>Theme & View</h4>
+                    <div class="toggle-group" style="margin-bottom:10px;">
+                        <button class="toggle-btn" onclick="app.toggleThemeMode()">Toggle Light/Dark</button>
+                        <button class="toggle-btn" onclick="app.toggleThemeLock()">
+                            <i class="fas fa-lock"></i> <span id="lockLabel">Lock Theme</span>
+                        </button>
+                        <button class="toggle-btn" onclick="app.openPageStylist()"><i class="fas fa-magic"></i> AI Stylist</button>
+                    </div>
+                    <small style="color:var(--text); opacity:0.7;">Styling is menu-only: chat replies never change the theme or a card.</small>
+                    <div class="toggle-group">
+                        <button class="toggle-btn" onclick="app.setCardView('list')">List</button>
+                        <button class="toggle-btn" onclick="app.setCardView('grid')">Grid</button>
+                        <button class="toggle-btn" onclick="app.setCardView('full')">Fullscreen</button>
+                    </div>
+                </div>
+                <div class="style-section">
+                    <h4>Voice</h4>
+                    <div class="toggle-group">
+                        <button class="toggle-btn" id="asrToggle" onclick="app.toggleASR()">ASR (Mic)</button>
+                        <button class="toggle-btn" id="ttsToggle" onclick="app.toggleTTS()">Auto TTS</button>
+                    </div>
+                    <small style="color:var(--text); opacity:0.7;">The mic button in the bar records and transcribes through the Worker. Auto TTS reads each answer back with the speaker button.</small>
+                </div>
+                <div class="style-section">
+                    <h4>Account</h4>
+                    <input type="text" id="loginUser" placeholder="Name" autocomplete="username" style="width:100%; margin-bottom:8px; min-height:auto;">
+                    <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" style="width:100%; margin-bottom:8px; min-height:auto;">
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <button class="btn btn-primary" onclick="app.login()"><i class="fas fa-sign-in-alt"></i> Sign in</button>
+                        <button class="btn btn-ghost" onclick="app.logout()"><i class="fas fa-sign-out-alt"></i> Sign out</button>
+                    </div>
+                    <small id="authStatus" style="display:block; margin-top:8px; color:var(--text); opacity:0.7;">Not signed in.</small>
+                </div>
+                <div class="style-section">
+                    <h4>Presets</h4>
+                    <p style="font-size: 12px; opacity: 0.7; margin-bottom: 10px;">Type "open [preset_name] card" to create preset cards. Or use the menu. Presets reference OpenRouter configurations.</p>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <button class="btn btn-ghost" onclick="app.managePresets()"><i class="fas fa-edit"></i> Manage Presets</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="presetSelectModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Select Preset</h3>
+                <button class="btn btn-ghost" onclick="app.closeModal('presetSelectModal')"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 12px; font-size: 13px; opacity: 0.8;">Apply preset to selected card(s)</p>
+                <div id="presetList" style="display: flex; flex-direction: column; gap: 8px;">
+                    <!-- Presets will be listed here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="presetsManageModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Manage Presets</h3>
+                <button class="btn btn-ghost" onclick="app.closeModal('presetsManageModal')"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 16px;">
+                    <input type="text" id="newPresetName" placeholder="Preset display name (e.g., Truth Engine)" style="margin-bottom: 8px;">
+                    <textarea id="newPresetPrompt" placeholder="OpenRouter preset slug (e.g., truth)" style="min-height: 80px;"></textarea>
+                    <button class="btn btn-primary" onclick="app.saveNewPreset()" style="margin-top: 8px;">Add Preset</button>
+                </div>
+                <div id="presetsList" style="max-height: 300px; overflow-y: auto;">
+                    <!-- Existing presets list -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="textEditorModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="editorTitle">Edit Text</h3>
+                <button class="btn btn-ghost" onclick="app.closeModal('textEditorModal')"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <textarea id="textEditorArea"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="app.closeModal('textEditorModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="app.saveManualEdit()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="promptModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="promptTitle">Action</h3>
+                <button class="btn btn-ghost" onclick="app.closeModal('promptModal')"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <p id="promptDesc" style="margin-bottom:8px; font-size:13px; opacity:0.8;"></p>
+                <textarea id="promptArea" placeholder="Optional instructions..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="app.closeModal('promptModal')">Cancel</button>
+                <button class="btn btn-primary" id="promptConfirmBtn">Execute</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="aiThemeModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>AI Stylist</h3>
+                <button class="btn btn-ghost" onclick="app.closeModal('aiThemeModal')"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom:8px; font-size:13px; opacity:0.8;">Describe the vibe. The menu applies it.</p>
+                <textarea id="aiThemePrompt" placeholder="Kill Bill red, pale text..."></textarea>
+                <p id="aiThemeStatus" class="modal-hint" hidden></p>
+            </div>
+            <div class="modal-footer">
+                <button class="dictation-btn" id="aiThemeMic" title="Describe it out loud" onclick="app.dictateInto('aiThemePrompt', this)"><i class="fas fa-microphone"></i></button>
+                <button class="btn btn-ghost" onclick="app.closeModal('aiThemeModal')">Cancel</button>
+                <button class="btn btn-ghost" id="aiThemeRetry" hidden onclick="app.applyAITheme(true)">Retry</button>
+                <button class="btn btn-primary" onclick="app.applyAITheme()">Generate & Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="styleModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Card Styles</h3>
+                <button class="btn btn-ghost" onclick="app.closeModal('styleModal')"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="lock-checkbox">
+                    <input type="checkbox" id="styleLocked">
+                    <label for="styleLocked">Lock Card Style</label>
+                </div>
+                <div class="style-section">
+                    <h4>Text Style</h4>
+                    <div class="toggle-group">
+                        <button class="toggle-btn" data-style-prop="fontWeight" data-style-val="bold">Bold</button>
+                        <button class="toggle-btn" data-style-prop="fontStyle" data-style-val="italic">Italic</button>
+                        <button class="toggle-btn" data-style-prop="textDecoration" data-style-val="underline">Underline</button>
+                    </div>
+                </div>
+                <div class="style-section">
+                    <h4>Colors</h4>
+                    <div class="color-picker"><label>Text</label><input type="color" id="styleColor" value="#f5f5f5"></div>
+                    <div class="color-picker"><label>Background</label><input type="color" id="styleBg" value="#1e1e1e"></div>
+                    <div class="color-picker"><label>Border</label><input type="color" id="styleBorder" value="#333333"></div>
+                </div>
+                <div class="style-section">
+                    <h4>Dimensions</h4>
+                    <div class="slider-group"><label style="width:80px;">Padding</label><input type="range" id="stylePadding" min="4" max="40" value="16"><span id="valPad">16px</span></div>
+                    <div class="slider-group"><label style="width:80px;">Radius</label><input type="range" id="styleRadius" min="0" max="24" value="16"><span id="valRad">16px</span></div>
+                    <div class="slider-group"><label style="width:80px;">Border W</label><input type="range" id="styleWidth" min="0" max="4" value="1"><span id="valWid">1px</span></div>
+                </div>
+                <div class="style-section">
+                    <h4>Custom CSS</h4>
+                    <textarea id="styleCustom" style="min-height:60px; font-family:monospace;" placeholder="e.g., h1 { color: red; }"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-ghost" onclick="app.closeModal('styleModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="app.saveStyles()">Apply Styles</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast">Action Saved</div>
+
+    <script src="script.js?v=16"></script>
+</body>
+</html>

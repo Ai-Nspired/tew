@@ -1,0 +1,185 @@
+{
+  "at": "2026-11-16T18:42:23.753Z",
+  "model": [],
+  "rows": [
+    {
+      "model": "perplexity/pplx-decider-flash-v1.2",
+      "ask": "how do I check a tax deadline for a filing",
+      "ms": 383,
+      "ok": true,
+      "status": 200,
+      "modelUsed": "perplexity/pplx-decider-flash-v1.2-20261016",
+      "choice": "ask",
+      "confidence": 0.90688911047376,
+      "spread": "ask:0.93016683285532 unclear:0.0329448357375139 result:0.02973907602314201",
+      "route": "general",
+      "routeConfidence": 0.31096204284578816,
+      "cost": 0.00000275,
+      "tokens": null
+    },
+    {
+      "model": "perplexity/pplx-decider-flash-v1.2",
+      "ask": "write me a two page report on the evidence code changes",
+      "ms": 210,
+      "ok": true,
+      "status": 200,
+      "modelUsed": "perplexity/pplx-decider-flash-v1.2-20261016",
+      "choice": "result",
+      "confidence": 0.7357233065818041,
+      "spread": "result:0.801792479936353 ask:0.1800862487796411 unclear:0.010147057090655692",
+      "route": "cards",
+      "routeConfidence": 0.3009877606240315,
+      "cost": 0.00000276,
+      "tokens": null
+    },
+    {
+      "model": "perplexity/pplx-decider-flash-v1.2",
+      "ask": "what is the capital of france",
+      "ms": 207,
+      "ok": true,
+      "status": 200,
+      "modelUsed": "perplexity/pplx-decider-flash-v1.2-20261016",
+      "choice": "ask",
+      "confidence": 0.9094145264525072,
+      "spread": "ask:0.9320608948393804 result:0.03692448554785605 unclear:0.019678620975868803",
+      "route": "general",
+      "routeConfidence": 0.42155257753705627,
+      "cost": 0.00000271,
+      "tokens": null
+    },
+    {
+      "model": "perplexity/pplx-decider-v1.2",
+      "ask": "how do I check a tax deadline for a filing",
+      "ms": 271,
+      "ok": true,
+      "status": 200,
+      "modelUsed": "perplexity/pplx-decider-v1.2-20261016",
+      "choice": "ask",
+      "confidence": 0.9069837748866113,
+      "spread": "ask:0.9302378311649585 unclear:0.0507094751066914 result:0.011563495719637109",
+      "route": "browse",
+      "routeConfidence": 0.5784973313119167,
+      "cost": 0.0000055,
+      "tokens": null
+    },
+    {
+      "model": "perplexity/pplx-decider-v1.2",
+      "ask": "write me a two page report on the evidence code changes",
+      "ms": 288,
+      "ok": true,
+      "status": 200,
+      "modelUsed": "perplexity/pplx-decider-v1.2-20261016",
+      "choice": "result",
+      "confidence": 0.2722627223983427,
+      "spread": "result:0.45419704179875703 preset:0.23159033663773268 ask:0.16471810176697985",
+      "route": "general",
+      "routeConfidence": 0.2396956539451629,
+      "cost": 0.00000552,
+      "tokens": null
+    },
+    {
+      "model": "perplexity/pplx-decider-v1.2",
+      "ask": "what is the capital of france",
+      "ms": 269,
+      "ok": true,
+      "status": 200,
+      "modelUsed": "perplexity/pplx-decider-v1.2-20261016",
+      "choice": "ask",
+      "confidence": 0.8580308567003373,
+      "spread": "ask:0.893523142525253 result:0.06651650961363009 unclear:0.03428619698509179",
+      "route": "truth",
+      "routeConfidence": 0.6251896307484901,
+      "cost": 0.00000542,
+      "tokens": null
+    },
+    {
+      "model": "scaledown/classify-1",
+      "ask": "how do I check a tax deadline for a filing",
+      "ms": 438,
+      "ok": true,
+      "status": 200,
+      "modelUsed": "scaledown/classify-1-20260928",
+      "choice": "ask",
+      "confidence": 0.9455027863520618,
+      "spread": "ask:0.9455027863520618 preset:0.02067450701327722 result:0.01945728955936522",
+      "route": "browse",
+      "routeConfidence": 0.3799510308498237,
+      "cost": 0.0000304,
+      "tokens": null
+    },
+    {
+      "model": "scaledown/classify-1",
+      "ask": "write me a two page report on the evidence code changes",
+      "ms": 301,
+      "ok": true,
+      "status": 200,
+      "modelUsed": "scaledown/classify-1-20260928",
+      "choice": "result",
+      "confidence": 0.7200005978539528,
+      "spread": "result:0.7200005978539528 preset:0.13989645050838354 ask:0.10328626979491591",
+      "route": "cards",
+      "routeConfidence": 0.31964913981181636,
+      "cost": 0.00003048,
+      "tokens": null
+    },
+    {
+      "model": "scaledown/classify-1",
+      "ask": "what is the capital of france",
+      "ms": 386,
+      "ok": true,
+      "status": 200,
+      "modelUsed": "scaledown/classify-1-20260928",
+      "choice": "ask",
+      "confidence": 0.8977047984996173,
+      "spread": "ask:0.8977047984996173 result:0.04877509952116202 preset:0.0338907547861032",
+      "route": "truth",
+      "routeConfidence": 0.4595377219102554,
+      "cost": 0.00003008,
+      "tokens": null
+    }
+  ],
+  "totals": [
+    {
+      "model": "perplexity/pplx-decider-flash-v1.2",
+      "calls": 3,
+      "fails": 0,
+      "ms_median": 210,
+      "ms_min": 207,
+      "ms_max": 383,
+      "cost_sum": 0.00000822,
+      "decisions": [
+        "ask/general",
+        "result/cards",
+        "ask/general"
+      ]
+    },
+    {
+      "model": "perplexity/pplx-decider-v1.2",
+      "calls": 3,
+      "fails": 0,
+      "ms_median": 271,
+      "ms_min": 269,
+      "ms_max": 288,
+      "cost_sum": 0.00001644,
+      "decisions": [
+        "ask/browse",
+        "result/general",
+        "ask/truth"
+      ]
+    },
+    {
+      "model": "scaledown/classify-1",
+      "calls": 3,
+      "fails": 0,
+      "ms_median": 386,
+      "ms_min": 301,
+      "ms_max": 438,
+      "cost_sum": 0.00009096,
+      "decisions": [
+        "ask/browse",
+        "result/cards",
+        "ask/truth"
+      ]
+    }
+  ]
+}

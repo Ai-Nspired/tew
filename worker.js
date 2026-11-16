@@ -645,11 +645,18 @@ var INDEX_HTML = `<!DOCTYPE html>
     [class~="hover:text-blue-400"]:hover { color: var(--accent); }
     [class~="hover:text-red-400"]:hover { color: #f2777a; }
     body { background: var(--canvas); color: var(--text); font-family: var(--ui); font-size: 13px; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-    .card-window { position: absolute; min-width: 320px; max-width: 520px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 10px 28px rgba(0,0,0,0.45); transition: border-color .12s, box-shadow .12s; display: flex; flex-direction: column; overflow: hidden; }
-    .card-window.browser-card { max-width: 640px; min-width: 400px; }
+    .card-window { position: absolute; min-width: 160px; max-width: 760px; container-type: inline-size; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 10px 28px rgba(0,0,0,0.45); transition: border-color .12s, box-shadow .12s; display: flex; flex-direction: column; overflow: hidden; }
+    .card-window.browser-card { max-width: 760px; min-width: 240px; }
     .card-window:hover { border-color: var(--border-strong); box-shadow: 0 12px 32px rgba(0,0,0,0.55); }
-    .card-header { cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; padding: 0 10px; height: 38px; background: var(--raised); border-radius: var(--radius) var(--radius) 0 0; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+    .card-header { cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; padding: 0 6px; height: 38px; gap: 4px; overflow: hidden; background: var(--raised); border-radius: var(--radius) var(--radius) 0 0; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
     .card-header:active { cursor: grabbing; }
+    .card-header > .flex-1 { min-width: 0; }
+    .card-header .card-title { min-width: 0; }
+    /* A tile small enough for six on screen keeps its own controls: the badge and the
+       domain picker are the first things to go, never the close button. */
+    @container (max-width: 250px) {
+      .card-header .card-type-badge, .card-header select { display: none; }
+    }
     .card-type-badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; font-weight: 600; text-transform: uppercase; }
     .badge-browser { background: #1a4a6a; color: #4ab8ff; }
     .badge-document { background: #2a3a1a; color: #8aff4a; }
@@ -1468,7 +1475,11 @@ var INDEX_HTML = `<!DOCTYPE html>
 
     // Cards dropped by hand sit a few pixels off the edge they look aligned to.
     // Snapping measures the rendered box, so it works whatever the canvas offset is.
-    const SNAP_PX = 8;
+    const SNAP_PX = 10;
+    // Small enough for a half-dozen tiles on one screen. The 280x200 floor is what made
+    // six squares impossible before.
+    const MIN_W = 160;
+    const MIN_H = 110;
     function snapGuidesLayer() {
       let layer = document.getElementById('snapGuides');
       if (!layer) {
@@ -1497,89 +1508,145 @@ var INDEX_HTML = `<!DOCTYPE html>
       layer.innerHTML = '';
       layer.style.display = 'none';
     }
-    function snapCard(el) {
+    function canvasOrigin() {
       const canvas = document.getElementById('canvas');
-      const cr = canvas ? canvas.getBoundingClientRect() : null;
-      const rect = el.getBoundingClientRect();
-      const xs = [];
-      const ys = [];
-      if (cr) { xs.push(cr.left, cr.right); ys.push(cr.top, cr.bottom); }
-      document.querySelectorAll('.card-window').forEach(function (other) {
-        if (other === el) return;
+      if (!canvas) return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
+      const r = canvas.getBoundingClientRect();
+      return { x: r.left, y: r.top, w: r.width, h: r.height };
+    }
+    function boundaries(el, origin) {
+      // Every edge a card can butt against, in canvas coordinates, gathered in one pass
+      // so a gesture never mixes viewport and canvas space.
+      const xs = [0, origin.w];
+      const ys = [0, origin.h];
+      const all = document.querySelectorAll('.card-window');
+      for (let i = 0; i < all.length; i++) {
+        const other = all[i];
+        if (other === el) continue;
         const r = other.getBoundingClientRect();
-        if (!r.width || !r.height) return;
-        xs.push(r.left, r.right);
-        ys.push(r.top, r.bottom);
-      });
-      const near = function (value, list) {
-        let best = null;
-        list.forEach(function (t) { const d = Math.abs(value - t); if (d <= SNAP_PX && (best === null || d < best.d)) best = { t: t, d: d }; });
-        return best;
-      };
-      const guides = [];
-      let dx = 0;
-      let dy = 0;
-      const hitL = near(rect.left, xs);
-      if (hitL) { dx = hitL.t - rect.left; guides.push({ axis: 'x', pos: hitL.t }); }
-      else { const hitR = near(rect.right, xs); if (hitR) { dx = hitR.t - rect.right; guides.push({ axis: 'x', pos: hitR.t }); } }
-      const hitT = near(rect.top, ys);
-      if (hitT) { dy = hitT.t - rect.top; guides.push({ axis: 'y', pos: hitT.t }); }
-      else { const hitB = near(rect.bottom, ys); if (hitB) { dy = hitB.t - rect.bottom; guides.push({ axis: 'y', pos: hitB.t }); } }
-      if (dx || dy) {
-        el.style.left = (parseFloat(el.style.left || '0') + dx) + 'px';
-        el.style.top = (parseFloat(el.style.top || '0') + dy) + 'px';
+        if (!r.width || !r.height) continue;
+        xs.push(Math.round(r.left - origin.x), Math.round(r.right - origin.x));
+        ys.push(Math.round(r.top - origin.y), Math.round(r.bottom - origin.y));
       }
-      drawSnapGuides(guides);
+      return { xs: xs, ys: ys };
+    }
+    function nearestEdge(value, list) {
+      let best = null;
+      for (let i = 0; i < list.length; i++) {
+        const d = Math.abs(value - list[i]);
+        if (d <= SNAP_PX && (best === null || d < best.d)) best = { at: list[i], d: d };
+      }
+      return best;
+    }
+    function snapDrag(el, left, top) {
+      // Pure: it takes the position the pointer asks for and returns the position to
+      // render. It never reads the element's own style, so a snap cannot feed into the
+      // next move - that feedback loop is what made dragging shudder.
+      const origin = canvasOrigin();
+      const rect = el.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      const lines = boundaries(el, origin);
+      const guides = [];
+      let sLeft = left;
+      let sTop = top;
+      let pinLeft = false;
+      let pinTop = false;
+
+      const edgeL = nearestEdge(left, lines.xs);
+      const edgeR = nearestEdge(left + w, lines.xs);
+      if (edgeL && (!edgeR || edgeL.d <= edgeR.d)) {
+        sLeft = edgeL.at; pinLeft = edgeL.at === 0;
+        guides.push({ axis: 'x', pos: origin.x + edgeL.at });
+      } else if (edgeR) {
+        sLeft = edgeR.at - w;
+        guides.push({ axis: 'x', pos: origin.x + edgeR.at });
+      }
+
+      const edgeT = nearestEdge(top, lines.ys);
+      const edgeB = nearestEdge(top + h, lines.ys);
+      if (edgeT && (!edgeB || edgeT.d <= edgeB.d)) {
+        sTop = edgeT.at; pinTop = edgeT.at === 0;
+        guides.push({ axis: 'y', pos: origin.y + edgeT.at });
+      } else if (edgeB) {
+        sTop = edgeB.at - h;
+        guides.push({ axis: 'y', pos: origin.y + edgeB.at });
+      }
+
+      // Pinned to the left edge means top-left: unless something is already holding the
+      // top, the card goes home to the corner rather than hovering halfway down.
+      if (pinLeft && !pinTop && !nearestEdge(sTop, lines.ys)) {
+        sTop = 0;
+        guides.push({ axis: 'y', pos: origin.y });
+      }
+      return { left: sLeft, top: sTop, guides: guides };
+    }
+    function lockBackground(on, el) {
+      // While a card moves, the page behind it stops reacting: no hover states on other
+      // cards, no text selection, no touch scroll stealing the gesture. This is the lock
+      // that keeps the canvas still under the cursor.
+      document.body.style.userSelect = on ? 'none' : '';
+      document.body.style.touchAction = on ? 'none' : '';
+      const all = document.querySelectorAll('.card-window');
+      for (let i = 0; i < all.length; i++) {
+        if (on && el && all[i] !== el) all[i].style.pointerEvents = 'none';
+        else all[i].style.pointerEvents = '';
+      }
     }
     function makeDraggable(el) {
       const header = el.querySelector('.card-header');
       if (!header) return;
-      header.addEventListener('touchstart', (e) => {
-        const t = e.touches[0]; if (!t) return;
-        if (['INPUT','BUTTON','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+      function begin(clientX, clientY) {
         const rect = el.getBoundingClientRect();
-        dragState = { type: 'drag', el, dx: t.clientX - rect.left, dy: t.clientY - rect.top };
+        // Grab offset stays in viewport space, the canvas origin is captured once: if the
+        // canvas shifts mid-gesture the card does not jump by the offset.
+        dragState = { type: 'drag', el: el, grabX: clientX - rect.left, grabY: clientY - rect.top, origin: canvasOrigin() };
+        lockBackground(true, el);
         showDockZones(el.dataset.id);
-      }, { passive: false });
-      header.addEventListener('touchmove', (e) => {
+      }
+      function move(clientX, clientY) {
         if (!dragState || dragState.type !== 'drag' || dragState.el !== el) return;
+        const rawLeft = clientX - dragState.grabX - dragState.origin.x;
+        const rawTop = clientY - dragState.grabY - dragState.origin.y;
+        const snapped = snapDrag(el, rawLeft, rawTop);
+        el.style.left = snapped.left + 'px';
+        el.style.top = snapped.top + 'px';
+        drawSnapGuides(snapped.guides);
+        highlightNearestDock(el.dataset.id, clientX, clientY);
+      }
+      function end(clientX, clientY) {
+        if (!dragState || dragState.type !== 'drag' || dragState.el !== el) return;
+        hideDockZones();
+        clearSnapGuides();
+        lockBackground(false, el);
+        tryDock(el.dataset.id, clientX, clientY);
+        dragState = null;
+      }
+      header.addEventListener('touchstart', function (e) {
         const t = e.touches[0];
-        dragState.el.style.left = \`\${t.clientX - dragState.dx}px\`;
-        dragState.el.style.top = \`\${t.clientY - dragState.dy}px\`;
-        snapCard(dragState.el);
-        highlightNearestDock(dragState.el.dataset.id, t.clientX, t.clientY);
+        if (!t) return;
+        if (['INPUT', 'BUTTON', 'SELECT', 'TEXTAREA'].indexOf(e.target.tagName) !== -1) return;
+        begin(t.clientX, t.clientY);
+      }, { passive: false });
+      header.addEventListener('touchmove', function (e) {
+        const t = e.touches[0];
+        if (!t) return;
+        move(t.clientX, t.clientY);
         e.preventDefault();
       }, { passive: false });
-      header.addEventListener('touchend', (e) => {
-        if (!dragState || dragState.type !== 'drag' || dragState.el !== el) return;
+      header.addEventListener('touchend', function (e) {
         const t = e.changedTouches[0];
-        hideDockZones();
-        clearSnapGuides();
-        tryDock(el.dataset.id, t ? t.clientX : dragState.el.getBoundingClientRect().left, t ? t.clientY : dragState.el.getBoundingClientRect().top);
-        dragState = null;
-      });
-      header.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        if (['INPUT','BUTTON','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
         const rect = el.getBoundingClientRect();
-        dragState = { type: 'drag', el, dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+        end(t ? t.clientX : rect.left, t ? t.clientY : rect.top);
+      });
+      header.addEventListener('mousedown', function (e) {
+        if (e.button !== 0) return;
+        if (['INPUT', 'BUTTON', 'SELECT', 'TEXTAREA'].indexOf(e.target.tagName) !== -1) return;
         e.preventDefault();
-        showDockZones(el.dataset.id);
+        begin(e.clientX, e.clientY);
       });
-      header.addEventListener('mousemove', (e) => {
-        if (!dragState || dragState.type !== 'drag' || dragState.el !== el) return;
-        dragState.el.style.left = \`\${e.clientX - dragState.dx}px\`;
-        dragState.el.style.top = \`\${e.clientY - dragState.dy}px\`;
-        snapCard(dragState.el);
-        highlightNearestDock(dragState.el.dataset.id, e.clientX, e.clientY);
-      });
-      header.addEventListener('mouseup', (e) => {
-        if (!dragState || dragState.type !== 'drag' || dragState.el !== el) return;
-        hideDockZones();
-        clearSnapGuides();
-        tryDock(el.dataset.id, e.clientX, e.clientY);
-        dragState = null;
-      });
+      header.addEventListener('mousemove', function (e) { move(e.clientX, e.clientY); });
+      header.addEventListener('mouseup', function (e) { end(e.clientX, e.clientY); });
     }
 
     function makeResizable(el, cardId) {
@@ -1612,16 +1679,33 @@ var INDEX_HTML = `<!DOCTYPE html>
 
     function applyResize(cx, cy) {
       if (!dragState || dragState.type !== 'resize') return;
-      const newW = Math.max(280, dragState.sw + (cx - dragState.sx));
-      const newH = Math.max(200, dragState.sh + (cy - dragState.sy));
+      const origin = canvasOrigin();
+      let w = Math.max(MIN_W, dragState.sw + (cx - dragState.sx));
+      let h = Math.max(MIN_H, dragState.sh + (cy - dragState.sy));
+      // The same edges that catch a moving card catch a stretching one, so a resized
+      // window can be butted exactly against its neighbour instead of by eye.
+      const lines = boundaries(dragState.el, origin);
+      const rect = dragState.el.getBoundingClientRect();
+      const left = rect.left - origin.x;
+      const top = rect.top - origin.y;
+      const guides = [];
+      const rightAt = nearestEdge(left + w, lines.xs);
+      if (rightAt) { w = Math.max(MIN_W, rightAt.at - left); guides.push({ axis: 'x', pos: origin.x + rightAt.at }); }
+      const bottomAt = nearestEdge(top + h, lines.ys);
+      if (bottomAt) { h = Math.max(MIN_H, bottomAt.at - top); guides.push({ axis: 'y', pos: origin.y + bottomAt.at }); }
       dragState.el.style.maxWidth = 'none';
-      dragState.el.style.width = \`\${newW}px\`;
-      dragState.el.style.minHeight = \`\${newH}px\`;
+      dragState.el.style.width = w + 'px';
+      dragState.el.style.minHeight = h + 'px';
+      // An explicit height is what makes a tile squarish: the content scrolls inside it
+      // instead of pushing the card back to its natural height.
+      dragState.el.style.height = h + 'px';
+      drawSnapGuides(guides);
     }
     function finishResize(cardId) {
       if (!dragState || dragState.type !== 'resize' || dragState.cardId !== cardId) return;
+      clearSnapGuides();
       const card = cards.find(c => c.id === cardId);
-      if (card) { const rect = dragState.el.getBoundingClientRect(); updateCard(cardId, { width: rect.width, height: Math.max(200, rect.height) }); }
+      if (card) { const rect = dragState.el.getBoundingClientRect(); updateCard(cardId, { width: rect.width, height: Math.max(MIN_H, rect.height) }); }
       dragState = null;
     }
 
@@ -1657,36 +1741,39 @@ var INDEX_HTML = `<!DOCTYPE html>
         if (el.dataset.id === dragId) return;
         const rect = el.getBoundingClientRect();
         const zones = [
-          { edge: 'left', cx: rect.left - 10, cy: rect.top + rect.height/2 },
-          { edge: 'right', cx: rect.right + 10, cy: rect.top + rect.height/2 },
-          { edge: 'top', cx: rect.left + rect.width/2, cy: rect.top - 10 },
-          { edge: 'bottom', cx: rect.left + rect.width/2, cy: rect.bottom + 10 },
+          { edge: 'left', cx: rect.left - 10, cy: rect.top + rect.height / 2 },
+          { edge: 'right', cx: rect.right + 10, cy: rect.top + rect.height / 2 },
+          { edge: 'top', cx: rect.left + rect.width / 2, cy: rect.top - 10 },
+          { edge: 'bottom', cx: rect.left + rect.width / 2, cy: rect.bottom + 10 },
         ];
-        for (const z of zones) {
+        zones.forEach(z => {
           const dist = Math.hypot(mx - z.cx, my - z.cy);
           if (dist < bestDist) { bestDist = dist; bestTarget = el.dataset.id; bestEdge = z.edge; }
-        }
+        });
       });
-      if (bestTarget) {
+      const dragEl = document.getElementById('card-' + dragId);
+      if (!dragEl) return;
+      const origin = canvasOrigin();
+      const d = dragEl.getBoundingClientRect();
+      const targetEl = bestTarget ? document.getElementById('card-' + bestTarget) : null;
+      if (targetEl) {
         sendWS({ type: 'card:dock', sourceId: dragId, targetId: bestTarget, edge: bestEdge });
-        const source = cards.find(c => c.id === dragId);
-        const target = cards.find(c => c.id === bestTarget);
-        if (source && target) {
-          const tRect = document.getElementById(\`card-\${bestTarget}\`)?.getBoundingClientRect();
-          const dragEl = document.getElementById(\`card-\${dragId}\`);
-          if (tRect && dragEl) {
-            let newX, newY;
-            switch(bestEdge) {
-              case 'left': newX = tRect.left - dragEl.offsetWidth - 8; newY = tRect.top; break;
-              case 'right': newX = tRect.right + 8; newY = tRect.top; break;
-              case 'top': newX = tRect.left; newY = tRect.top - dragEl.offsetHeight - 8; break;
-              case 'bottom': newX = tRect.left; newY = tRect.bottom + 8; break;
-            }
-            dragEl.style.left = \`\${newX}px\`; dragEl.style.top = \`\${newY}px\`;
-            updateCard(dragId, { x: newX, y: newY, dockedTo: bestTarget, dockEdge: bestEdge });
-          }
-        }
+        const t = targetEl.getBoundingClientRect();
+        // Flush and in canvas coordinates - the landing the guides already promised. The
+        // old 8px gap was applied in viewport space, which is why a dock jumped on a
+        // scrolled or offset canvas.
+        let x = Math.round(d.left - origin.x);
+        let y = Math.round(d.top - origin.y);
+        if (bestEdge === 'left') { x = Math.round(t.left - origin.x - d.width); y = Math.round(t.top - origin.y); }
+        else if (bestEdge === 'right') { x = Math.round(t.right - origin.x); y = Math.round(t.top - origin.y); }
+        else if (bestEdge === 'top') { x = Math.round(t.left - origin.x); y = Math.round(t.top - origin.y - d.height); }
+        else { x = Math.round(t.left - origin.x); y = Math.round(t.bottom - origin.y); }
+        dragEl.style.left = x + 'px';
+        dragEl.style.top = y + 'px';
+        updateCard(dragId, { x: x, y: y, dockedTo: bestTarget, dockEdge: bestEdge });
+        return;
       }
+      updateCard(dragId, { x: Math.round(d.left - origin.x), y: Math.round(d.top - origin.y) });
     }
 
     function autoNumberDocuments() {
