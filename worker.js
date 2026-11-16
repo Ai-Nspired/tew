@@ -2728,7 +2728,7 @@ var INDEX_HTML = `<!DOCTYPE html>
         '<span><button class="ctrl-btn" id="watchAdd" style="font-size:10px;padding:2px 8px">+ tool</button> ' +
         '<button class="ctrl-btn" id="watchRefresh" style="font-size:10px;padding:2px 8px">refresh</button> ' +
         '<button class="ctrl-btn" id="watchClose" style="font-size:10px;padding:2px 8px">close</button></span>' +
-        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div><div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">Deciders</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="decideProbe" style="height:22px;font-size:10px;padding:0 6px">probe</button></span></div><div style="display:flex;gap:4px;margin-top:6px"><input id="decideText" placeholder="the ask to compare on" style="flex:1;min-width:0;height:24px;font-size:11px;background:var(--canvas);border:1px solid var(--border);color:var(--text);padding:0 6px;border-radius:3px"><button class="ctrl-btn" id="decideGo" style="height:24px;font-size:10px;padding:0 8px">run</button></div><div id="decideRows" style="color:var(--muted);margin-top:6px">not loaded</div><div id="decideFoot" style="font-size:10px;color:var(--dim);margin-top:4px"></div><div id="decideTraffic" style="margin-top:8px"></div>';
+        '</div><div id="watchRows" style="color:#8fa6bd">not checked yet</div>' + '<div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">What it learned</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="learnAdd" style="height:22px;font-size:10px;padding:0 6px">+ row</button> <button class="ctrl-btn" id="learnForget" style="height:22px;font-size:10px;padding:0 6px">forget all</button> <button class="ctrl-btn" id="learnSeed" style="height:22px;font-size:10px;padding:0 6px">seed cods</button></span></div><div id="learnRows" style="color:var(--muted)">not loaded</div><div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">Deciders</strong><span style="display:flex;flex-wrap:wrap;gap:4px"><button class="ctrl-btn" id="decideProbe" style="height:22px;font-size:10px;padding:0 6px">probe</button></span></div><div style="display:flex;gap:4px;margin-top:6px"><input id="decideText" placeholder="the ask to compare on" style="flex:1;min-width:0;height:24px;font-size:11px;background:var(--canvas);border:1px solid var(--border);color:var(--text);padding:0 6px;border-radius:3px"><button class="ctrl-btn" id="decideGo" style="height:24px;font-size:10px;padding:0 8px">run</button></div><div id="decideRows" style="color:var(--muted);margin-top:6px">not loaded</div><div id="decideFoot" style="font-size:10px;color:var(--dim);margin-top:4px"></div><div id="decideTraffic" style="margin-top:8px"></div><div style="margin:14px 0 0;border-top:1px solid var(--border);padding-top:10px;display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center"><strong style="color:var(--accent);font-size:12px">Keys</strong><span><button class="ctrl-btn" id="keysCheck" style="height:22px;font-size:10px;padding:0 6px">check</button></span></div><div id="keysRows" style="color:var(--muted);margin-top:6px">not checked</div>';
       document.body.appendChild(el);
       el.querySelector('#watchClose').onclick = function () { el.style.display = 'none'; };
       el.querySelector('#watchRefresh').onclick = function () { refreshWatchtower(); };
@@ -2738,6 +2738,7 @@ var INDEX_HTML = `<!DOCTYPE html>
       el.querySelector('#learnSeed').onclick = function () { learnSeed(); };
       el.querySelector('#decideProbe').onclick = function () { probeDeciders(); };
       el.querySelector('#decideGo').onclick = function () { probeDeciders(); };
+      el.querySelector('#keysCheck').onclick = function () { loadKeys(); };
       return el;
     }
     async function openWatchtower() {
@@ -2785,6 +2786,72 @@ var INDEX_HTML = `<!DOCTYPE html>
       }
       loadLearned();
       loadDecided();
+      loadKeys();
+    }
+    // Which service holds which secret, and whether the keys this Worker holds
+    // still open the gates they are for. The map is static; only the checks move.
+    async function loadKeys() {
+      const box = document.getElementById('keysRows');
+      if (!box) return;
+      const key = watchKey();
+      if (!key) return;
+      box.textContent = 'checking keys...';
+      try {
+        const res = await fetch(API('/keys'), { headers: { 'x-admin-key': key } });
+        const d = await res.json();
+        if (!res.ok) { box.textContent = d.message || d.error || 'keys failed'; return; }
+        renderKeys(d);
+      } catch (e) {
+        box.textContent = 'keys error: ' + e.message;
+      }
+    }
+    function keysLine(text, color, size) {
+      const line = document.createElement('div');
+      line.style.cssText = 'margin-top:' + (size === 'tag' ? '6px' : '3px') + ';font-size:' + (size === 'tag' ? '9px' : '11px') + ';color:' + color + (size === 'tag' ? ';letter-spacing:.08em;text-transform:uppercase' : '');
+      line.textContent = text;
+      return line;
+    }
+    function renderKeys(d) {
+      const box = document.getElementById('keysRows');
+      if (!box) return;
+      box.innerHTML = '';
+
+      (d.checks || []).forEach(function (c) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #16202e';
+        const dot = document.createElement('span');
+        dot.textContent = c.ok ? '\u25cf' : '\u25cb';
+        dot.style.color = c.ok ? 'var(--ok)' : 'var(--bad)';
+        const name = document.createElement('span');
+        name.textContent = c.key;
+        name.style.cssText = 'width:76px;color:#e6f2ff;overflow:hidden;text-overflow:ellipsis';
+        const meta = document.createElement('span');
+        meta.textContent = (c.held ? (c.status || '—') + ' \u00b7 ' + (c.ms == null ? '-' : c.ms + 'ms') + ' \u00b7 ' : '') + (c.detail || c.label);
+        meta.style.cssText = 'flex:1;color:#8fa6bd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+        meta.title = c.label + ' \u2014 ' + (c.detail || '');
+        row.appendChild(dot); row.appendChild(name); row.appendChild(meta);
+        box.appendChild(row);
+      });
+
+      if (d.spend) box.appendChild(keysLine('openrouter on tew: ' + (d.spend.openrouter_on_tew ? 'yes' : 'no \u2014 via ORPROXY'), d.spend.openrouter_on_tew ? 'var(--ok)' : 'var(--warn, #e0a83a)'));
+
+      if ((d.pairs || []).length) {
+        box.appendChild(keysLine('must match', 'var(--muted)', 'tag'));
+        d.pairs.forEach(function (p) { box.appendChild(keysLine(p.need + ' \u2014 ' + p.why, '#8fa6bd')); });
+      }
+      if ((d.orphans || []).length) {
+        box.appendChild(keysLine('no reader', 'var(--muted)', 'tag'));
+        d.orphans.forEach(function (o) { box.appendChild(keysLine(o.service + ': ' + o.names.join(', ') + ' \u2014 ' + o.why, '#8fa6bd')); });
+      }
+      if ((d.misnamed || []).length) {
+        box.appendChild(keysLine('misnamed', 'var(--muted)', 'tag'));
+        d.misnamed.forEach(function (m) { box.appendChild(keysLine(m.service + ': ' + m.name + ' \u2014 ' + m.why, '#8fa6bd')); });
+      }
+      if ((d.services || []).length) {
+        box.appendChild(keysLine('held', 'var(--muted)', 'tag'));
+        d.services.forEach(function (s) { box.appendChild(keysLine(s.service + ' \u2014 ' + s.secrets.join(', '), '#5b7288')); });
+      }
+      if (d.at) box.appendChild(keysLine('checked ' + d.at, '#5b7288'));
     }
     async function loadLearned() {
       const box = document.getElementById('learnRows');
@@ -5144,6 +5211,68 @@ ${principleList}` },
       const tools = Array.isArray(saved) && saved.length ? saved : WATCH_DEFAULTS;
       const probed = await Promise.all(tools.map((t) => probeTool(t)));
       return json({ at: (new Date()).toISOString(), tools: probed });
+    }
+    if (url.pathname === "/api/keys" && request.method === "GET") {
+      // Gated and fail-closed, same as the watchtower it sits in: this lists which
+      // service holds which secret, which is reconnaissance, so it is not public.
+      // Names and state only, never a value — the map came from `wrangler secret
+      // list` and the source that reads each name, and it says "not held here"
+      // rather than pretending to check what this Worker cannot reach.
+      const denied = adminGate(this.env, request);
+      if (denied) return denied;
+
+      const selfOrigin = new URL(request.url).origin;
+      async function keyCheck(keyName, label, target, header, expect) {
+        const value = String((this.env && this.env[keyName]) || "");
+        const started = Date.now();
+        if (!value) return { key: keyName, label: label, held: false, ok: false, status: 0, ms: 0, detail: "not set on this Worker" };
+        try {
+          const res = await fetch(target, { method: "GET", headers: { [header]: value }, signal: AbortSignal.timeout(8000) });
+          const status = res.status;
+          const ok = status === expect;
+          return {
+            key: keyName, label: label, held: true, ok: ok, status: status, ms: Date.now() - started,
+            detail: ok ? "opens " + label : (status === 401 ? "rejected — pair is split" : "unexpected " + status)
+          };
+        } catch (err) {
+          return { key: keyName, label: label, held: true, ok: false, status: 0, ms: Date.now() - started, detail: "unreachable: " + String((err && err.message) || err) };
+        }
+      }
+      const checks = await Promise.all([
+        keyCheck.call(this, "ADMIN_KEY", "tew /api/watch", selfOrigin + "/api/watch", "x-admin-key", 200),
+        keyCheck.call(this, "ARA_KEY", "ara /api/recent", "https://ara.ai-n.workers.dev/api/recent", "x-admin-key", 200),
+        keyCheck.call(this, "LEARN_KEY", "tew /api/learn", selfOrigin + "/api/learn", "x-learn-key", 200)
+      ]);
+      return json({
+        at: (/* @__PURE__ */ new Date()).toISOString(),
+        checks: checks,
+        pairs: [
+          { need: "tew:ARA_KEY = ara:ADMIN_KEY = mind:ARA_KEY", why: "TEW's ladder writes and decider probe, and mind's reports, all present the same key to ARA" },
+          { need: "tew:LEARN_KEY = mind:LEARN_KEY", why: "the shared ladder's read key — mind's is unset, so its ladder read is inert until it is created" }
+        ],
+        orphans: [
+          { service: "cods", names: ["ADMIN_KEY", "KEY", "CLOUDFLARE_API_TOKEN"], why: "no env.ADMIN_KEY, env.KEY or token read exists anywhere in cods' source" },
+          { service: "mind", names: ["KEY"], why: "mind's ADMIN_KEY gates the console; KEY has no reader" }
+        ],
+        misnamed: [
+          { service: "ara", name: "CLOUDFLARE _API_KEY", why: "the space makes it unreachable as env.CLOUDFLARE_API_KEY" },
+          { service: "pi-harness-example", name: "SEARING_URL2", why: "reads like SEARCH_URL typed wrong" }
+        ],
+        spend: {
+          openrouter_on_tew: String((this.env && this.env.OPENROUTER_API_KEY) || "").length > 0,
+          note: "with no key here, TEW's generation and decider probe go through ORPROXY"
+        },
+        services: [
+          { service: "tew", secrets: ["ADMIN_KEY", "LEARN_KEY", "ARA_KEY"], reads: "sheet · x-learn-key on /api/learn · x-admin-key out to ARA" },
+          { service: "ara", secrets: ["ADMIN_KEY", "OPENROUTER_API_KEY", "CLOUDFLARE_ID", "CLOUDFLARE _API_KEY"], reads: "gate on /feedback /outcome /recent and POST /domains · decider spend" },
+          { service: "mind", secrets: ["ADMIN_KEY", "ARA_KEY", "CLOUDFLARE_API_TOKEN", "KEY", "OPENROUTER_API_KEY"], reads: "console gate · writes to ARA · LEARN_KEY missing" },
+          { service: "cods", secrets: ["ADMIN_KEY", "KEY", "CLOUDFLARE_API_TOKEN", "OPENROUTER_API_KEY"], reads: "model calls" },
+          { service: "truth", secrets: ["ADMIN_KEY"], reads: "write and ops paths; TEW does not hold this key" },
+          { service: "ai-proxy", secrets: ["OPENROUTER_API_KEY"], reads: "upstream spend" },
+          { service: "orproxy", secrets: ["ADMIN_SECRET", "OPENROUTER_API_KEY"], reads: "proxy gate and upstream spend" },
+          { service: "pi-harness-example", secrets: ["CLOUDFLARE_API_TOKEN", "OPENROUTER_API_KEY", "SEARING_URL2"], reads: "harness generation" }
+        ]
+      });
     }
     if (url.pathname === "/api/compare" && request.method === "POST") {
       // Gated: an unset key closes this, it never opens it.
