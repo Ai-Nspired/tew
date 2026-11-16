@@ -318,6 +318,21 @@ These are his decisions, not inferences. They override anything elsewhere that d
   carries `domain: general`. Nothing can be compared across the projects until her decision
   schema carries it.
 
+### Why identity comes before decisions (owner's statement, 2026-11-16)
+
+- Sign-in on mind is **not** a gate on using it. Reading and asking stay open; the owner does not
+  want a login to use his own tool.
+- Identity exists **so the system can grow decision-wise**. A correction is somebody's judgement,
+  and an anonymous one cannot be reviewed, compared or promoted later - it is not a lesser record,
+  it is an unusable one. That is why `LOGIN_PASSWORD` makes an unnamed correction a `401
+  sign_in_required` rather than an anonymous write.
+- The actor is recorded beside ARA's row in KV (`verdict:<ts>:<id>`) because her `/feedback` schema
+  has `{id, correct, correctedTo}` and no field for who. Do not invent the field onto her row;
+  keep the attribution where it can be joined later.
+- The growth path this enables: named decisions accumulate per person, survive or fail against
+  verification, and only the survivors are promoted. `artifacts/ara-learning-map.md` holds where
+  each project stands on that path.
+
 ## 14. The working loop — how a change is made here
 
 Given by the owner on 2026-11-16, so the pattern is the same in every session and every
