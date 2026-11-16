@@ -7,7 +7,7 @@ written from TEW's point of view.
 
 Live facts in this file were verified against the deployed Workers on **2026-11-14**.
 Anything not verified says so. Do not upgrade an assumption to a fact without
-re-checking it. §11 and §12 were added **2026-11-15** from the owner's own statements;
+re-checking it. §11 and §12 were added **2026-11-15**, §14 on **2026-11-16**, from the owner's own statements;
 where they disagree with anything above, they win.
 
 ---
@@ -302,3 +302,56 @@ These are his decisions, not inferences. They override anything elsewhere that d
   the truth engine — not in front of things you imagine.
 - The owner should never have to repeat a rule. If a rule is only in the conversation, it is
   not recorded: put it in this file.
+
+---
+
+## 14. The working loop — how a change is made here
+
+Given by the owner on 2026-11-16, so the pattern is the same in every session and every
+project. It is §10 made concrete: the **Decide** step *is* the check-in.
+
+1. **Decide.** Name the file, the change and the reason before editing. One check-in per
+   change; a "yes" covers that change only.
+2. **Act.** The edit, then the narrowest check that could catch it being wrong. Do not widen
+   into a general test pass.
+3. **Verify with numbers.** Pixels, ratios, counts, hashes, exit codes. "It works" cannot be
+   disagreed with; "the button is at 322px on both faces and hit-testing returns the button"
+   can. This step is what makes a verdict possible.
+4. **Verdict.** The owner says yes or no — and **his edit is the verdict**. He does not have to
+   restate anything; what he changes is the answer.
+5. **Record.** The commit message carries the *why*, not the *what*. Friction goes in this file
+   or an `artifacts/` note, so the next session does not pay for it again.
+
+### Rules of thumb this account has already paid for
+
+- **Suspect the layer above before the handler below.** A control that "sometimes does
+  nothing" is usually covered by something invisible that still takes pointer events — a toast
+  at `z-index: 2500` with `opacity: 0` ate taps meant for a restore button. `elementFromPoint`
+  at the target's centre names the culprit in one call.
+- **Measure the state the user sees.** A `rotateY(180deg)` face reports a mirrored box while
+  hidden; measuring it there produced a "fix" that moved the button from 321 to 278.
+- **Side-effecting helpers run before the state they clear.** Setting a target id and then
+  calling `closeCardMenu()` (which nulls it) made every menu item silently do nothing while
+  the menu still opened and closed perfectly.
+- **Every gesture leaves a click behind.** A long press that opens a menu is followed by a
+  `touchend` click that closes it again and flips the card. Suppress it deliberately, with a
+  short window.
+- **Assert before you write.** Patch scripts that assert each anchor and abort have already
+  prevented a half-applied edit here (card markup lives in the client script, not the page).
+- **Cache-bust when comparing deployed assets** (`?v=$RANDOM`), and remember `/index.html`
+  answers 307 with an empty body — hashing it reports false staleness every time.
+
+### ARA learns from outcomes, not opinions (owner's decision, 2026-11-16)
+
+- His **edits count as verdicts automatically**.
+- The diffs behind those verdicts produce **candidate** rows, promoted only once they survive.
+  Survive means: one build and one verification untouched, **or** changed and then left alone
+  through the next round.
+- A **formatting-only** diff is not a correction of logic: count it as survival, not as
+  disagreement, or every reformat teaches her the wrong lesson.
+- Mind already follows the whole loop for its Stylist: `askAra` decides, the palette runs,
+  `/outcome` records what came back (now including the theme's name), and `/feedback` carries
+  the correction. Styles are the template because their output is checkable against a contrast
+  bar rather than a matter of taste.
+- Where each project stands, and the order to wire the rest, is in
+  `artifacts/ara-learning-map.md`. cods is next, because a diff is a comparable artefact.
