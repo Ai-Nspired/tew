@@ -1,2 +1,7 @@
 *.bin
 *.js.bak
+
+# local dev state and reference clones, not source
+.wrangler/
+.scratch/
+rebuild/
