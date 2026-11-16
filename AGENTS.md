@@ -305,6 +305,19 @@ These are his decisions, not inferences. They override anything elsewhere that d
 
 ---
 
+### Where the audit wording actually lives (owner's statement, 2026-11-16)
+
+- The prompt that governs the legal audits is the **OpenRouter preset** (`@preset/truth`), edited
+  on OpenRouter's own site. **The owner maintains it manually** — separation of concerns. Do not
+  try to change it from here, and do not describe `src/prompts/truth.md` as its source.
+- mind sends both: its own `truth.md` as the system prompt *and* `model: @preset/truth`. Two voices
+  in one request. When the rule below is needed there, it must match word-for-word what mind says,
+  or the two pull against each other.
+- **Domains are the spine and have to be reconciled.** Everything this account does is about
+  domains; mind's decision carries `task/depth/tone/preset/source` but **no `domain`**, cods
+  carries `domain: general`. Nothing can be compared across the projects until her decision
+  schema carries it.
+
 ## 14. The working loop — how a change is made here
 
 Given by the owner on 2026-11-16, so the pattern is the same in every session and every
