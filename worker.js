@@ -1195,7 +1195,7 @@ var INDEX_HTML = `<!DOCTYPE html>
         const proxyUrl = card.url ? \`/api/proxy?url=\${encodeURIComponent(card.url)}\` : '';
         contentHtml = \`
           <div class="browser-bar" style="margin-bottom:6px;">
-            <input type="text" class="url-input" data-url-input="\${card.id}" value="\${escapeHtml(card.url || '')}" placeholder="Enter URL and press Enter…" style="flex:1;background:#0d0d1a;color:#4ab8ff;border:1px solid #2a2a4a;border-radius:4px;padding:3px 8px;font-size:11px;font-family:monospace;" />
+            <input type="text" class="url-input" data-url-input="\${card.id}" value="\${escapeHtml(card.url || '')}" placeholder="mind  or  mind.ai-n.workers.dev" style="flex:1;background:#0d0d1a;color:#4ab8ff;border:1px solid #2a2a4a;border-radius:4px;padding:3px 8px;font-size:11px;font-family:monospace;" />
             <button onclick="browserNavigate('\${card.id}')" style="padding:3px 8px;background:#ff6b1a;color:#0d0d1a;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Go</button>
             <button onclick="openBrowserFullscreen('\${card.id}')" title="Open full screen" style="padding:3px 8px;background:#22223a;color:#4ab8ff;border:1px solid #2a2a4a;border-radius:4px;font-size:10px;cursor:pointer;">⛶</button>
           </div>
@@ -1466,6 +1466,71 @@ var INDEX_HTML = `<!DOCTYPE html>
 
     let dragState = null; // { type: 'drag', el, dx, dy } | { type: 'resize', el, cardId, sx, sy, sw, sh }
 
+    // Cards dropped by hand sit a few pixels off the edge they look aligned to.
+    // Snapping measures the rendered box, so it works whatever the canvas offset is.
+    const SNAP_PX = 8;
+    function snapGuidesLayer() {
+      let layer = document.getElementById('snapGuides');
+      if (!layer) {
+        layer = document.createElement('div');
+        layer.id = 'snapGuides';
+        layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:var(--z-panel);display:none';
+        document.body.appendChild(layer);
+      }
+      return layer;
+    }
+    function drawSnapGuides(guides) {
+      const layer = snapGuidesLayer();
+      layer.innerHTML = '';
+      if (!guides.length) { layer.style.display = 'none'; return; }
+      layer.style.display = 'block';
+      guides.forEach(function (g) {
+        const line = document.createElement('div');
+        line.style.cssText = 'position:absolute;background:var(--accent);opacity:.6;' +
+          (g.axis === 'x' ? 'left:' + Math.round(g.pos) + 'px;top:0;bottom:0;width:1px' : 'top:' + Math.round(g.pos) + 'px;left:0;right:0;height:1px');
+        layer.appendChild(line);
+      });
+    }
+    function clearSnapGuides() {
+      const layer = document.getElementById('snapGuides');
+      if (!layer) return;
+      layer.innerHTML = '';
+      layer.style.display = 'none';
+    }
+    function snapCard(el) {
+      const canvas = document.getElementById('canvas');
+      const cr = canvas ? canvas.getBoundingClientRect() : null;
+      const rect = el.getBoundingClientRect();
+      const xs = [];
+      const ys = [];
+      if (cr) { xs.push(cr.left, cr.right); ys.push(cr.top, cr.bottom); }
+      document.querySelectorAll('.card-window').forEach(function (other) {
+        if (other === el) return;
+        const r = other.getBoundingClientRect();
+        if (!r.width || !r.height) return;
+        xs.push(r.left, r.right);
+        ys.push(r.top, r.bottom);
+      });
+      const near = function (value, list) {
+        let best = null;
+        list.forEach(function (t) { const d = Math.abs(value - t); if (d <= SNAP_PX && (best === null || d < best.d)) best = { t: t, d: d }; });
+        return best;
+      };
+      const guides = [];
+      let dx = 0;
+      let dy = 0;
+      const hitL = near(rect.left, xs);
+      if (hitL) { dx = hitL.t - rect.left; guides.push({ axis: 'x', pos: hitL.t }); }
+      else { const hitR = near(rect.right, xs); if (hitR) { dx = hitR.t - rect.right; guides.push({ axis: 'x', pos: hitR.t }); } }
+      const hitT = near(rect.top, ys);
+      if (hitT) { dy = hitT.t - rect.top; guides.push({ axis: 'y', pos: hitT.t }); }
+      else { const hitB = near(rect.bottom, ys); if (hitB) { dy = hitB.t - rect.bottom; guides.push({ axis: 'y', pos: hitB.t }); } }
+      if (dx || dy) {
+        el.style.left = (parseFloat(el.style.left || '0') + dx) + 'px';
+        el.style.top = (parseFloat(el.style.top || '0') + dy) + 'px';
+      }
+      drawSnapGuides(guides);
+    }
     function makeDraggable(el) {
       const header = el.querySelector('.card-header');
       if (!header) return;
@@ -1481,6 +1546,7 @@ var INDEX_HTML = `<!DOCTYPE html>
         const t = e.touches[0];
         dragState.el.style.left = \`\${t.clientX - dragState.dx}px\`;
         dragState.el.style.top = \`\${t.clientY - dragState.dy}px\`;
+        snapCard(dragState.el);
         highlightNearestDock(dragState.el.dataset.id, t.clientX, t.clientY);
         e.preventDefault();
       }, { passive: false });
@@ -1488,6 +1554,7 @@ var INDEX_HTML = `<!DOCTYPE html>
         if (!dragState || dragState.type !== 'drag' || dragState.el !== el) return;
         const t = e.changedTouches[0];
         hideDockZones();
+        clearSnapGuides();
         tryDock(el.dataset.id, t ? t.clientX : dragState.el.getBoundingClientRect().left, t ? t.clientY : dragState.el.getBoundingClientRect().top);
         dragState = null;
       });
@@ -1503,11 +1570,13 @@ var INDEX_HTML = `<!DOCTYPE html>
         if (!dragState || dragState.type !== 'drag' || dragState.el !== el) return;
         dragState.el.style.left = \`\${e.clientX - dragState.dx}px\`;
         dragState.el.style.top = \`\${e.clientY - dragState.dy}px\`;
+        snapCard(dragState.el);
         highlightNearestDock(dragState.el.dataset.id, e.clientX, e.clientY);
       });
       header.addEventListener('mouseup', (e) => {
         if (!dragState || dragState.type !== 'drag' || dragState.el !== el) return;
         hideDockZones();
+        clearSnapGuides();
         tryDock(el.dataset.id, e.clientX, e.clientY);
         dragState = null;
       });
@@ -1844,15 +1913,26 @@ var INDEX_HTML = `<!DOCTYPE html>
     }
     window.addEventListener('resize', () => fitBrowserFrames(document));
 
+    // A card you already know by name should not need its whole address typed:
+    // "mind" and "mind.ai-n.workers.dev" both mean the same page.
+    const BARE_NAME = /^[a-z0-9][a-z0-9-]*$/i;
+    function resolveAddress(raw) {
+      const value = String(raw || '').trim();
+      if (!value) return '';
+      if (/^https?:\/\//i.test(value)) return value;
+      if (value.indexOf(' ') === -1 && value.indexOf('.') !== -1) return 'https://' + value;
+      if (BARE_NAME.test(value)) return 'https://' + value + '.ai-n.workers.dev';
+      return 'https://' + value;
+    }
+
     // ── Browser Navigation ──
     function browserNavigate(cardId) {
       const el = document.getElementById(\`card-\${cardId}\`);
       if (!el) return;
       const urlInput = el.querySelector(\`[data-url-input="\${cardId}"]\`);
       if (!urlInput) return;
-      let url = urlInput.value.trim();
+      const url = resolveAddress(urlInput.value);
       if (!url) return;
-      if (!url.match(/^https?:\\/\\//)) url = 'https://' + url;
       urlInput.value = url;
       // Update the iframe
       const frame = el.querySelector(\`[data-browser-frame="\${cardId}"]\`);
@@ -2790,6 +2870,21 @@ var INDEX_HTML = `<!DOCTYPE html>
     }
     // Which service holds which secret, and whether the keys this Worker holds
     // still open the gates they are for. The map is static; only the checks move.
+    async function confirmKeysMap() {
+      const key = watchKey();
+      if (!key) return;
+      try {
+        const res = await fetch(API('/keys'), {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-admin-key': key },
+          body: JSON.stringify({ action: 'confirm' })
+        });
+        if (res.ok) { showToast('map confirmed', 'success'); loadKeys(); }
+        else showToast('confirm failed', 'warning');
+      } catch (e) {
+        showToast('confirm failed: ' + e.message, 'warning');
+      }
+    }
     async function loadKeys() {
       const box = document.getElementById('keysRows');
       if (!box) return;
@@ -2852,6 +2947,30 @@ var INDEX_HTML = `<!DOCTYPE html>
       const box = document.getElementById('keysRows');
       if (!box) return;
       box.innerHTML = '';
+
+      const map = d.map || null;
+      if (map) {
+        const banner = document.createElement('div');
+        const stale = !!map.stale;
+        banner.style.cssText = 'padding:6px 8px;border-radius:3px;font-size:11px;line-height:1.5;margin-bottom:6px;background:' + (stale ? 'rgba(255,74,74,.14)' : 'rgba(74,184,255,.08)') + ';border:1px solid ' + (stale ? 'var(--bad)' : 'var(--border)') + ';color:' + (stale ? '#ff9c9c' : '#8fa6bd');
+        banner.textContent = (stale ? 'STALE MAP \u2014 ' : 'map ') +
+          (map.confirmedAt ? 'confirmed ' + map.ageDays + ' day' + (map.ageDays === 1 ? '' : 's') + ' ago' : 'never confirmed, dated ' + (map.at || '?')) +
+          (stale ? '. Run wrangler secret list, then confirm.' : ' \u00b7 ' + (map.at || ''));
+        box.appendChild(banner);
+        const confirm = document.createElement('button');
+        confirm.className = 'ctrl-btn';
+        confirm.style.cssText = 'height:22px;font-size:10px;padding:0 6px;margin-bottom:6px';
+        confirm.textContent = 'confirm map';
+        confirm.onclick = function () { confirmKeysMap(); };
+        box.appendChild(confirm);
+        if ((map.drift || []).length) {
+          box.appendChild(keysLine('drift \u2014 the map and reality disagree', '#ff9c9c'));
+          map.drift.forEach(function (row) { box.appendChild(keysLine(row.what + ' \u2014 ' + row.why, '#ff9c9c')); });
+        } else {
+          box.appendChild(keysLine('no drift between the map and what this Worker can see', '#5b7288'));
+        }
+        if (map.blind) box.appendChild(keysLine(map.blind, '#5b7288'));
+      }
 
       (d.checks || []).forEach(function (c) {
         const row = document.createElement('div');
@@ -5252,7 +5371,7 @@ ${principleList}` },
       const probed = await Promise.all(tools.map((t) => probeTool(t)));
       return json({ at: (new Date()).toISOString(), tools: probed });
     }
-    if (url.pathname === "/api/keys" && request.method === "GET") {
+    if (url.pathname === "/api/keys" && (request.method === "GET" || request.method === "POST")) {
       // Gated and fail-closed, same as the watchtower it sits in: this lists which
       // service holds which secret, which is reconnaissance, so it is not public.
       // Names and state only, never a value — the map came from `wrangler secret
@@ -5262,6 +5381,19 @@ ${principleList}` },
       if (denied) return denied;
 
       const selfOrigin = new URL(request.url).origin;
+      // A map nobody re-checked is worse than no map: it reads as verified. The age
+      // runs from the last confirmation, so "stale" is a state somebody cleared on
+      // purpose, not something that silently ages.
+      const MAP_AT = "2026-11-16";
+      const CONFIRM_KEY = "KEYS:confirmedAt";
+      const confirmedRaw = await this.ctx.storage.get(CONFIRM_KEY);
+      const confirmedAt = typeof confirmedRaw === "string" ? confirmedRaw : null;
+      const ageDays = (function (iso) {
+        const t = iso ? Date.parse(iso) : NaN;
+        if (!isFinite(t)) return null;
+        return Math.max(0, Math.floor((Date.now() - t) / 864e5));
+      })(confirmedAt || MAP_AT + "T00:00:00Z");
+
       async function keyCheck(keyName, label, target, header, expect) {
         const value = String((this.env && this.env[keyName]) || "");
         const started = Date.now();
@@ -5278,14 +5410,40 @@ ${principleList}` },
           return { key: keyName, label: label, held: true, ok: false, status: 0, ms: Date.now() - started, detail: "unreachable: " + String((err && err.message) || err) };
         }
       }
+      if (request.method === "POST") {
+        const body = await request.json().catch(function () { return {}; });
+        if (!body || body.action !== "confirm") return json({ error: "unknown action" }, 400);
+        const now = (/* @__PURE__ */ new Date()).toISOString();
+        await this.ctx.storage.put(CONFIRM_KEY, now);
+        return json({ confirmedAt: now, mapAt: MAP_AT });
+      }
       const checks = await Promise.all([
         keyCheck.call(this, "ADMIN_KEY", "tew /api/watch", selfOrigin + "/api/watch", "x-admin-key", 200),
         keyCheck.call(this, "ARA_KEY", "ara /recent", "https://ara.ai-n.workers.dev/recent", "x-admin-key", 200),
         keyCheck.call(this, "LEARN_KEY", "tew /api/learn", selfOrigin + "/api/learn", "x-learn-key", 200)
       ]);
+      const drift = [];
+      for (const name of ["ADMIN_KEY", "LEARN_KEY", "ARA_KEY"]) {
+        if (!String((this.env && this.env[name]) || "").length) {
+          drift.push({ what: "tew:" + name, why: "the map says this Worker holds it; the binding is empty" });
+        }
+      }
+      for (const c of checks) {
+        if (c.held && !c.ok && c.status === 401) {
+          drift.push({ what: c.key, why: "the map says this pair matches; the gate answered 401 - split pair or stale map" });
+        }
+      }
       return json({
         at: (/* @__PURE__ */ new Date()).toISOString(),
         checks: checks,
+        map: {
+          at: MAP_AT,
+          confirmedAt: confirmedAt,
+          ageDays: ageDays,
+          stale: ageDays === null || ageDays > 30,
+          drift: drift,
+          blind: "seven Workers hold secrets this one cannot read - ara, mind, cods, truth, ai-proxy, orproxy, pi-harness-example. Their rows are unverified since the confirmation date; there is no Cloudflare token here on purpose."
+        },
         pairs: [
           { need: "tew:ARA_KEY = ara:ADMIN_KEY = mind:ARA_KEY", why: "TEW's ladder writes and decider probe, and mind's reports, all present the same key to ARA" },
           { need: "tew:LEARN_KEY = mind:LEARN_KEY", why: "the shared ladder's read key — mind's is unset, so its ladder read is inert until it is created" }
