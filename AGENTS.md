@@ -164,8 +164,8 @@ provisional answer.
    pattern to copy.
 6. **No dependency additions** without a reason that survives review. The Worker
    currently ships with none.
-7. When you learn something about the account's wiring that is not obvious from
-   the code, add it to this file.
+7. When you learn something about the account's wiring that is not obvious from the code, add it to this file.
+8. **The client is emitted, not served.** `INDEX_HTML` is a template literal in `worker.js`, so escaping faults (a regex written `/^https?:\/\//i` arrives as `/^https?://i`, which comments out the rest of the line) break the served script while the source stays valid JS — `node --check worker.js` cannot see it, and the Worker still answers 200 with a shell and no handlers. Run **`node tools/check-page.mjs`** after any edit inside `INDEX_HTML`; it emits the page the way the Worker does and parses its inline script. Backslashes in that script must be doubled for `worker.js` and single in `index.html`, which is not wrapped.
 
 ---
 
