@@ -203,6 +203,7 @@
       <span class="sep" style="width:1px;height:20px;background:#2a2a4a;margin:0 4px;"></span>
       <button class="ctrl-btn" onclick="promptQuery()" style="border-color:#1a2a4a;color:#4a9fff;">🔎 Query</button>
       <button class="ctrl-btn" onclick="promptAudit()" style="border-color:#4a1a2a;color:#ff4a6a;">🔍 Audit</button>
+      <button class="ctrl-btn" onclick="promptCompare()" style="border-color:#1a3a3a;color:#4ad0c8;">⇄ Compare</button>
       <button class="ctrl-btn" onclick="openTabList('eitl')" style="border-color:#2a1a4a;color:#c84aff;">⚙ EITL</button>
       <button class="ctrl-btn" onclick="promptDomain()" style="border-color:#2a2a1a;color:#c8c84a;">🌍 Domain</button>
       <button class="ctrl-btn" onclick="openNSM()" style="border-color:#1a3a2a;color:#4affa0;">🧠 NSM</button>
@@ -2062,6 +2063,45 @@
     }
 
     // ── Truth-Audit ──
+    async function promptCompare() {
+      const ask = window.prompt('Compare which ask? (cods vs mind)');
+      if (!ask) return;
+      let key = sessionStorage.getItem('tew_admin_key') || '';
+      if (!key) {
+        key = window.prompt('ADMIN_KEY for /api/compare');
+        if (!key) return;
+        sessionStorage.setItem('tew_admin_key', key);
+      }
+      showSpinner('Comparing both...');
+      try {
+        const res = await fetch(API('/compare'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+          body: JSON.stringify({ ask: ask })
+        });
+        const d = await res.json();
+        hideSpinner();
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 503) sessionStorage.removeItem('tew_admin_key');
+          showToast(d.message || d.error || 'Compare failed', 'error');
+          return;
+        }
+        const line = function (x) {
+          if (!x) return 'nothing back';
+          if (x.error) return 'error: ' + x.error;
+          return [x.route || 'route ?', x.cacheSource ? 'from ' + x.cacheSource : 'generated',
+            x.move ? 'move ' + x.move : '', x.clarify ? 'asks a question' : '', x.chars + ' chars']
+            .filter(Boolean).join(' · ');
+        };
+        const text = ['ask          ' + d.ask, 'mind         ' + line(d.mind), 'cods         ' + line(d.cods),
+          'verdict      ' + d.verdict, 'teach        '].join(String.fromCharCode(10));
+        await createCard('Compare', d.ask, text);
+        showToast('Compared: ' + d.verdict, 'success');
+      } catch (e) {
+        hideSpinner();
+        showToast('Compare error: ' + e.message, 'error');
+      }
+    }
     function promptAudit() {
       promptAuditWithKVPicker();
     }

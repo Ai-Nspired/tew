@@ -442,6 +442,91 @@ ${cardContent?.slice(0, 2e3) || "(empty)"}` }
 };
 
 // src/domains.mjs
+// A comparison is a read of two other Workers. It writes nothing, so it stores
+// nothing; it is gated on ADMIN_KEY because an unset key must mean closed.
+function compareHead(text) {
+  return String(text || "").replace(/\s+/g, " ").trim().slice(0, 90);
+}
+function compareVerdict(a, b) {
+  if (!a || !b) return "one side returned nothing";
+  if (a.error || b.error) return "one side errored";
+  if (a.clarify && b.clarify) return "agree — both ask";
+  if (a.clarify !== b.clarify) return a.clarify ? "differ — mind asks, cods answers" : "differ — cods asks, mind answers";
+  if (a.cacheSource || b.cacheSource) {
+    if (a.cacheSource && a.cacheSource === b.cacheSource) return "agree — both from " + a.cacheSource;
+    return "differ — mind " + (a.cacheSource || "generated") + ", cods " + (b.cacheSource || "generated");
+  }
+  return a.head && a.head === b.head ? "agree — same answer" : "differ — different answers";
+}
+async function readMindAsk(ask) {
+  try {
+    const res = await fetch("https://mind.ai-n.workers.dev/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: ask }], stream: true }),
+      signal: AbortSignal.timeout(90000),
+    });
+    if (!res.ok || !res.body) return { app: "mind", error: "status_" + res.status };
+    const text = await res.text();
+    let meta = null;
+    let answer = "";
+    let clarify = false;
+    let question = null;
+    for (const line of text.split("\n")) {
+      const t = line.trim();
+      if (!t.startsWith("data: ")) continue;
+      const raw = t.slice(6);
+      if (!raw || raw === "[DONE]") continue;
+      let ev;
+      try { ev = JSON.parse(raw); } catch (err) { continue; }
+      if (ev.type === "meta") meta = ev;
+      else if (ev.type === "delta") answer += ev.text || "";
+      else if (ev.type === "clarify") { clarify = true; question = (ev.question && ev.question.q) || null; }
+    }
+    const dec = (meta && meta.decision) || {};
+    return {
+      app: "mind",
+      route: (meta && meta.route) || null,
+      model: (meta && meta.model) || null,
+      cacheSource: dec.cacheSource || null,
+      move: (dec.ara && dec.ara.move) || null,
+      clarify: clarify,
+      question: question,
+      chars: answer.length,
+      head: compareHead(answer),
+    };
+  } catch (err) {
+    return { app: "mind", error: String((err && err.message) || err) };
+  }
+}
+async function readCodsAsk(ask) {
+  try {
+    const res = await fetch("https://cods.ai-n.workers.dev/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: ask }),
+      signal: AbortSignal.timeout(90000),
+    });
+    if (!res.ok) return { app: "cods", error: "status_" + res.status };
+    const d = await res.json();
+    const qs = (d.clarify && d.clarify.questions) || [];
+    const answer = String(d.answer || "");
+    return {
+      app: "cods",
+      route: d.route || null,
+      model: d.provider || null,
+      cacheSource: d.cacheSource || (d.source === "cache" ? d.cacheSource || "cache" : null),
+      move: (d.ara && d.ara.move) || null,
+      clarify: qs.length > 0,
+      question: qs[0] ? qs[0].q || null : null,
+      chars: answer.length,
+      head: compareHead(answer),
+    };
+  } catch (err) {
+    return { app: "cods", error: String((err && err.message) || err) };
+  }
+}
+
 var DOMAINS = {
   general: { label: "General", tier: "base", color: "#888" },
   legal: { label: "Legal", tier: "domain", color: "#4ab8ff" },
@@ -688,6 +773,7 @@ var INDEX_HTML = `<!DOCTYPE html>
       <span class="sep" style="width:1px;height:20px;background:#2a2a4a;margin:0 4px;"></span>
       <button class="ctrl-btn" onclick="promptQuery()" style="border-color:#1a2a4a;color:#4a9fff;">🔎 Query</button>
       <button class="ctrl-btn" onclick="promptAudit()" style="border-color:#4a1a2a;color:#ff4a6a;">🔍 Audit</button>
+      <button class="ctrl-btn" onclick="promptCompare()" style="border-color:#1a3a3a;color:#4ad0c8;">⇄ Compare</button>
       <button class="ctrl-btn" onclick="openTabList('eitl')" style="border-color:#2a1a4a;color:#c84aff;">⚙ EITL</button>
       <button class="ctrl-btn" onclick="promptDomain()" style="border-color:#2a2a1a;color:#c8c84a;">🌍 Domain</button>
       <button class="ctrl-btn" onclick="openNSM()" style="border-color:#1a3a2a;color:#4affa0;">🧠 NSM</button>
@@ -2547,6 +2633,45 @@ var INDEX_HTML = `<!DOCTYPE html>
     }
 
     // ── Truth-Audit ──
+    async function promptCompare() {
+      const ask = window.prompt('Compare which ask? (cods vs mind)');
+      if (!ask) return;
+      let key = sessionStorage.getItem('tew_admin_key') || '';
+      if (!key) {
+        key = window.prompt('ADMIN_KEY for /api/compare');
+        if (!key) return;
+        sessionStorage.setItem('tew_admin_key', key);
+      }
+      showSpinner('Comparing both...');
+      try {
+        const res = await fetch(API('/compare'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-admin-key': key },
+          body: JSON.stringify({ ask: ask })
+        });
+        const d = await res.json();
+        hideSpinner();
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 503) sessionStorage.removeItem('tew_admin_key');
+          showToast(d.message || d.error || 'Compare failed', 'error');
+          return;
+        }
+        const line = function (x) {
+          if (!x) return 'nothing back';
+          if (x.error) return 'error: ' + x.error;
+          return [x.route || 'route ?', x.cacheSource ? 'from ' + x.cacheSource : 'generated',
+            x.move ? 'move ' + x.move : '', x.clarify ? 'asks a question' : '', x.chars + ' chars']
+            .filter(Boolean).join(' · ');
+        };
+        const text = ['ask          ' + d.ask, 'mind         ' + line(d.mind), 'cods         ' + line(d.cods),
+          'verdict      ' + d.verdict, 'teach        '].join(String.fromCharCode(10));
+        await createCard('Compare', d.ask, text);
+        showToast('Compared: ' + d.verdict, 'success');
+      } catch (e) {
+        hideSpinner();
+        showToast('Compare error: ' + e.message, 'error');
+      }
+    }
     function promptAudit() {
       promptAuditWithKVPicker();
     }
@@ -3993,6 +4118,26 @@ ${principleList}` },
       await this.persist();
       this.broadcast({ type: "card_created", card: queryCard });
       return json({ ...queryResult, card: queryCard });
+    }
+    if (url.pathname === "/api/compare" && request.method === "POST") {
+      // Gated: an unset key closes this, it never opens it.
+      const want = String((this.env && this.env.ADMIN_KEY) || "").trim();
+      if (!want) {
+        return json({ error: "admin_not_configured", message: "Set ADMIN_KEY on this Worker before comparing." }, 503);
+      }
+      const given = String(request.headers.get("x-admin-key") || "").trim();
+      let drift = given.length ^ want.length;
+      for (let i = 0; i < Math.max(given.length, want.length); i++) {
+        drift |= (given.charCodeAt(i) || 0) ^ (want.charCodeAt(i) || 0);
+      }
+      if (drift !== 0) return json({ error: "admin_key_required", message: "Send ADMIN_KEY in x-admin-key." }, 401);
+
+      const body = await request.json().catch(() => ({}));
+      const ask = String(body.ask || body.query || "").trim();
+      if (!ask) return json({ error: "ask is required" }, 400);
+      const at = (new Date()).toISOString();
+      const both = await Promise.all([readMindAsk(ask), readCodsAsk(ask)]);
+      return json({ ask, at, mind: both[0], cods: both[1], verdict: compareVerdict(both[0], both[1]) });
     }
     if (url.pathname === "/api/audit" && request.method === "POST") {
       await this.ensureLoaded();
