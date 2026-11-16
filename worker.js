@@ -2967,8 +2967,9 @@ var INDEX_HTML = `<!DOCTYPE html>
         const meta = document.createElement('div');
         meta.style.cssText = 'font-size:10px;color:var(--muted);margin-top:2px;line-height:1.45';
         if (r.ok) {
+          const via = r.via ? ' \u00b7 ' + r.via : '';
           const spread = r.spread ? ' \u00b7 ' + r.spread.map(function (s) { return s.option + ':' + s.p; }).join(' ') : '';
-          meta.textContent = r.choice + (r.route ? ' / ' + r.route : '') + ' \u00b7 conf ' + r.confidence + ' \u00b7 ' + decideCost(r.cost) + spread;
+          meta.textContent = r.choice + (r.route ? ' / ' + r.route : '') + ' \u00b7 conf ' + r.confidence + ' \u00b7 ' + decideCost(r.cost) + via + spread;
         } else {
           meta.textContent = r.error || 'no answer';
         }
@@ -2993,6 +2994,13 @@ var INDEX_HTML = `<!DOCTYPE html>
         row.appendChild(ctl);
         box.appendChild(row);
       });
+      if (d.ladder) {
+        const l = d.ladder;
+        const row = document.createElement('div');
+        row.style.cssText = 'padding:7px 0;border-top:1px solid var(--border);color:var(--muted)';
+        row.textContent = l.model + ' \u00b7 ' + (l.ok ? (l.ms + 'ms \u00b7 ' + l.choice + (l.route ? ' / ' + l.route : '') + ' \u00b7 conf ' + l.confidence + ' \u00b7 ' + decideCost(l.cost) + (l.served ? ' \u00b7 served ' + l.served : '')) : (l.error || 'no answer'));
+        box.appendChild(row);
+      }
       renderDecideBudget(d.budget);
       renderTraffic(d.traffic);
     }
@@ -4108,13 +4116,49 @@ function decideQuestions() {
     }
   };
 }
+// The ladder as ai-proxy routes it: no model named, so the service picks. What it
+// answers says whether its own choice is the same ask the models gave theirs on.
+async function ladderView(env, ask) {
+  const out = { label: "ladder (ai-proxy)", model: "ai-proxy:/api/decide", ok: false, ms: null };
+  const binding = env && env["AI-PROXY"];
+  if (!binding || typeof binding.fetch !== "function") { out.error = "AI-PROXY is not bound"; return out; }
+  const started = Date.now();
+  try {
+    const res = await binding.fetch(new Request("https://ai-proxy/api/decide", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state: ask, questions: decideQuestions() }),
+      signal: AbortSignal.timeout(20000)
+    }));
+    out.ms = Date.now() - started;
+    out.status = res.status;
+    const data = await res.json().catch(function () { return null; });
+    if (!res.ok || !data) { out.error = "http " + res.status; return out; }
+    const intent = (data.answers && data.answers.intent) || null;
+    const route = (data.answers && data.answers.route) || null;
+    out.ok = true;
+    out.served = data.model || null;
+    out.choice = (intent && intent.choice) || null;
+    out.confidence = decideRounded(intent && intent.confidence);
+    out.spread = decideSpread(intent && intent.probabilities);
+    out.route = (route && route.choice) || null;
+    out.cost = (data.usage && typeof data.usage.cost === "number") ? data.usage.cost : null;
+  } catch (err) {
+    out.ms = Date.now() - started;
+    out.error = String((err && err.message) || err);
+  }
+  return out;
+}
+
 // What the decider has actually done, read from ARA's own rows. A probe shows
 // what each model would do with one ask; this shows what the one in use has been
 // doing, priced the same way.
-async function araTraffic(limit) {
+async function araTraffic(env, limit) {
   const take = Math.max(1, Math.min(60, Number(limit) || 30));
   try {
+    const araKey = String((env && (env.ARA_KEY || env.ADMIN_KEY)) || "").trim();
     const res = await fetch("https://ara.ai-n.workers.dev/recent?limit=" + take, {
+      headers: araKey ? { "x-admin-key": araKey } : {},
       signal: AbortSignal.timeout(8000)
     });
     if (!res.ok) return { ok: false, error: "http " + res.status, models: [], rows: [] };
@@ -4152,17 +4196,38 @@ async function araTraffic(limit) {
 async function runDecider(env, model, ask) {
   const started = Date.now();
   const out = { model: model.id, label: model.label, list: model.list, ok: false, ms: null };
-  if (!env || !env.ORPROXY || typeof env.ORPROXY.fetch !== "function") {
-    out.error = "ORPROXY is not bound";
+  const hasKey = Boolean(env && String(env.OPENROUTER_API_KEY || "").trim());
+  const hasProxy = Boolean(env && env.ORPROXY && typeof env.ORPROXY.fetch === "function");
+  if (!hasKey && !hasProxy) {
+    out.error = "no OpenRouter transport (OPENROUTER_API_KEY and ORPROXY are both missing)";
     return out;
   }
   try {
-    const res = await env.ORPROXY.fetch(new Request("https://orproxy/api/decide", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: model.id, state: ask, questions: decideQuestions() }),
-      signal: AbortSignal.timeout(20000)
-    }));
+    // The key first: that is the path ARA takes, so the milliseconds mean the
+    // same thing. The proxy is the fallback, and the row says which one answered.
+    const payload = JSON.stringify({ model: model.id, state: ask, questions: decideQuestions() });
+    const key = String((env && env.OPENROUTER_API_KEY) || "").trim();
+    const via = key ? "key" : "proxy";
+    out.via = via;
+    let res;
+    if (key) {
+      res = await fetch("https://openrouter.ai/api/alpha/decisions", {
+        method: "POST",
+        headers: { authorization: "Bearer " + key, "content-type": "application/json" },
+        body: payload,
+        signal: AbortSignal.timeout(20000)
+      });
+    } else if (env && env.ORPROXY && typeof env.ORPROXY.fetch === "function") {
+      res = await env.ORPROXY.fetch(new Request("https://orproxy/api/decide", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: payload,
+        signal: AbortSignal.timeout(20000)
+      }));
+    } else {
+      out.error = "no OpenRouter transport (OPENROUTER_API_KEY and ORPROXY are both missing)";
+      return out;
+    }
     out.ms = Date.now() - started;
     out.status = res.status;
     const data = await res.json().catch(function () { return null; });
@@ -4178,6 +4243,8 @@ async function runDecider(env, model, ask) {
     out.routeConfidence = decideRounded(route && route.confidence);
     out.cost = (data.usage && typeof data.usage.cost === "number") ? data.usage.cost : null;
     out.tokensIn = (data.usage && data.usage.input_tokens) || null;
+    out.costUpstream = (data.usage && data.usage.cost_details && data.usage.cost_details.upstream_inference_cost != null)
+      ? data.usage.cost_details.upstream_inference_cost : null;
   } catch (err) {
     out.ms = Date.now() - started;
     out.error = String((err && err.message) || err);
@@ -4870,7 +4937,7 @@ ${principleList}` },
       const cap = { used: budget.count || 0, limit: DECIDE_PER_HOUR, hour: hour };
 
       if (request.method === "GET") {
-        return json({ at: now.toISOString(), models: DECIDE_MODELS, adopted: adopted, budget: cap, traffic: await araTraffic(30) });
+        return json({ at: now.toISOString(), models: DECIDE_MODELS, adopted: adopted, budget: cap, traffic: await araTraffic(this.env, 30) });
       }
 
       const body = await request.json().catch(function () { return {}; });
@@ -4900,13 +4967,15 @@ ${principleList}` },
       await this.ctx.storage.put(DECIDE_BUDGET, budget);
       const env = this.env;
       const results = await Promise.all(DECIDE_MODELS.map(function (m) { return runDecider(env, m, ask); }));
+      const ladder = await ladderView(env, ask);
       return json({
         at: now.toISOString(),
         ask: ask,
         results: results,
+        ladder: ladder,
         adopted: adopted,
         budget: { used: budget.count, limit: DECIDE_PER_HOUR, hour: hour },
-        traffic: await araTraffic(30)
+        traffic: await araTraffic(this.env, 30)
       });
     }
     if (url.pathname === "/api/learn" && (request.method === "GET" || request.method === "POST")) {

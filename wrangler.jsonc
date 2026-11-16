@@ -56,6 +56,13 @@
       "binding": "ORPROXY",
       "service": "orproxy"
     },
+    // The same target orproxy forwards to, by its own name: for comparing the
+    // decider ladder against a single model, and for development against it
+    // directly instead of through a hop that hides what answered.
+    {
+      "binding": "AI-PROXY",
+      "service": "ai-proxy"
+    },
     {
       "binding": "TRUTH",
       "service": "truth"
