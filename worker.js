@@ -4070,7 +4070,11 @@ var server_default = {
     if (url.pathname.startsWith("/gatekeeper/")) {
       const wanted = url.pathname.split("/")[2] || "";
       const bindingName = "GATEKEEPER_" + wanted.toUpperCase().replace(/-/g, "_");
-      const specialist = wanted ? env[bindingName] : null;
+      // The bindings in this account carry the owner's own names, so the door
+      // answers to both: GATEKEEPER_<NAME> where it exists, and these where the
+      // cfos services are bound under their short names.
+      const aliases = { context: "CFCXT", websearch: "CFWB", scheduler: "CFCAL", backend: "CFBE", os: "CFOS" };
+      const specialist = wanted ? env[bindingName] || env[aliases[wanted]] : null;
       if (!specialist || typeof specialist.fetch !== "function") {
         return json({ error: "no_gatekeeper", gatekeeper: wanted || null, binding: bindingName }, 404);
       }
