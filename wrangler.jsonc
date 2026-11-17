@@ -52,6 +52,13 @@
     }
   ],
   "services": [
+    // Live on the deployed script but absent from this file until now: a push
+    // rebuilds bindings from here, so leaving them out would silently drop them.
+    { "binding": "CFOS", "service": "cfos" },
+    { "binding": "CFBE", "service": "cfos-backend" },
+    { "binding": "CFCAL", "service": "cfos-gk-scheduler" },
+    { "binding": "CFCXT", "service": "cfos-gk-context" },
+    { "binding": "CFWB", "service": "cfos-gk-websearch" },
     {
       "binding": "ORPROXY",
       "service": "orproxy"

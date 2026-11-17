@@ -4062,6 +4062,20 @@ var server_default = {
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: cors() });
     }
+
+    // A router shape borrowed from Cloudflare OS: one prefix, and whichever
+    // specialist is bound answers it. Unbound is a clean miss, not a crash - the
+    // same fail-safe every other binding here uses. Nothing is bound today, so
+    // this route answers 404 and changes no existing path.
+    if (url.pathname.startsWith("/gatekeeper/")) {
+      const wanted = url.pathname.split("/")[2] || "";
+      const bindingName = "GATEKEEPER_" + wanted.toUpperCase().replace(/-/g, "_");
+      const specialist = wanted ? env[bindingName] : null;
+      if (!specialist || typeof specialist.fetch !== "function") {
+        return json({ error: "no_gatekeeper", gatekeeper: wanted || null, binding: bindingName }, 404);
+      }
+      return specialist.fetch(request);
+    }
     if (url.pathname === "/health" || url.pathname === "/api/health") {
       const orproxyReady = !!(env.ORPROXY && typeof env.ORPROXY.fetch === "function");
       return json({
@@ -5122,6 +5136,24 @@ ${combined}`;
     if (url.pathname === "/api/search" && request.method === "POST") {
       const { query } = await request.json();
       if (!query) return json({ hits: [] });
+      // The specialist first, when one is installed: a SEARCH binding can be
+      // swapped or upgraded without touching this file. No binding, or a bad
+      // answer, falls through to the SearXNG path exactly as before.
+      const searchService = this.env.SEARCH;
+      if (searchService && typeof searchService.fetch === "function") {
+        try {
+          const forwarded = await searchService.fetch(new Request("https://search/", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ query })
+          }));
+          const body = await forwarded.json().catch(() => null);
+          if (forwarded.ok && body && Array.isArray(body.hits)) {
+            return json({ hits: body.hits, query, source: "search-specialist", backend: body.backend || "binding:SEARCH" });
+          }
+        } catch (e) {
+        }
+      }
       try {
         const result = await searxSearch(this.env, query);
         return json({ hits: result.hits, query, source: "searxng", backend: result.backend });
